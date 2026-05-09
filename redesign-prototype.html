@@ -1,0 +1,1390 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PSRWeb — Redesign Prototype</title>
+  <style>
+    /* ── Direction: Modern Minimal (Linear / Vercel) ── */
+    :root {
+      --bg:      oklch(99% 0.002 240);
+      --surface: oklch(100% 0 0);
+      --surface-soft: oklch(98.5% 0.004 240);
+      --fg:      oklch(18% 0.012 250);
+      --muted:   oklch(54% 0.012 250);
+      --border:  oklch(92% 0.005 250);
+      --accent:  oklch(58% 0.18 255);
+      --rec:     oklch(55% 0.2 22);
+      --rec-soft: oklch(98% 0.015 22);
+      --rec-border: oklch(83% 0.07 22);
+      --bg-aura: color-mix(in oklch, var(--accent) 10%, transparent);
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+      --r-sm: 6px;
+      --r-md: 10px;
+      --r-lg: 12px;
+    }
+
+    :root[data-theme='dark'] {
+      --bg:      oklch(22% 0.015 250);
+      --surface: oklch(27% 0.014 250);
+      --surface-soft: oklch(24% 0.013 250);
+      --fg:      oklch(95% 0.004 250);
+      --muted:   oklch(75% 0.01 250);
+      --border:  oklch(37% 0.01 250);
+      --accent:  oklch(72% 0.15 255);
+      --rec:     oklch(70% 0.16 22);
+      --rec-soft: oklch(35% 0.04 22);
+      --rec-border: oklch(44% 0.07 22);
+      --bg-aura: color-mix(in oklch, var(--accent) 16%, transparent);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 14px; scroll-behavior: smooth; }
+
+    body {
+      background:
+        radial-gradient(circle at 86% -6%, var(--bg-aura), transparent 34%),
+        linear-gradient(var(--bg), var(--bg));
+      color: var(--fg);
+      font-family: var(--font-body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    :root[data-theme='dark'] { color-scheme: dark; }
+
+    /* ─────────────────────────────────────────
+       TOPBAR
+    ───────────────────────────────────────── */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: 48px;
+      background: color-mix(in oklch, var(--surface) 85%, transparent);
+      backdrop-filter: blur(14px) saturate(1.4);
+      -webkit-backdrop-filter: blur(14px) saturate(1.4);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 14px;
+    }
+
+    .topbar-wordmark {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .topbar-wordmark-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .topbar-sep { flex: 1; }
+
+    .theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 4px 11px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: background-color 0.16s, border-color 0.16s;
+    }
+
+    .theme-toggle:hover {
+      background: var(--surface-soft);
+      border-color: color-mix(in oklch, var(--accent) 28%, var(--border));
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .status-pill.recording {
+      color: color-mix(in oklch, var(--rec) 70%, var(--fg));
+      border-color: var(--rec-border);
+      background: var(--rec-soft);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-pill.recording .status-dot {
+      background: var(--rec);
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ─────────────────────────────────────────
+       LAYOUT
+    ───────────────────────────────────────── */
+    .layout {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 28px 20px 160px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 260px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 720px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+    }
+
+    /* ─────────────────────────────────────────
+       CARD SYSTEM
+    ───────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 26px -22px color-mix(in oklch, var(--fg) 28%, transparent);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+      border-color: color-mix(in oklch, var(--accent) 24%, var(--border));
+      box-shadow: 0 10px 28px -20px color-mix(in oklch, var(--fg) 32%, transparent);
+    }
+
+    .card:last-child { margin-bottom: 0; }
+
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .card-body {
+      padding: 20px;
+    }
+
+    /* ─────────────────────────────────────────
+       APP HEADER SECTION
+    ───────────────────────────────────────── */
+    .app-header {
+      padding: 22px 20px;
+    }
+
+    .app-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .app-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: var(--fg);
+      margin-bottom: 6px;
+    }
+
+    .app-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 480px;
+    }
+
+    /* ─────────────────────────────────────────
+       STAT GRID
+    ───────────────────────────────────────── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .stat-cell {
+      background: var(--surface);
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+    }
+
+    /* ─────────────────────────────────────────
+       FORM CONTROLS
+    ───────────────────────────────────────── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .field:last-child { margin-bottom: 0; }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg);
+    }
+
+    .field-hint {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type="number"],
+    select,
+    textarea {
+      font-family: var(--font-body);
+      font-size: 13px;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input[type="number"]:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 12%, transparent);
+    }
+
+    input[type="number"] {
+      width: 72px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+    }
+
+    select {
+      width: 100%;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238899bb' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+      cursor: pointer;
+    }
+
+    textarea {
+      width: 100%;
+      resize: vertical;
+      min-height: 68px;
+      line-height: 1.55;
+    }
+
+    /* ─────────────────────────────────────────
+       ALERTS
+    ───────────────────────────────────────── */
+    .alert {
+      font-size: 12px;
+      padding: 9px 12px;
+      border-radius: var(--r-sm);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .alert-info {
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+      color: oklch(36% 0.12 250);
+    }
+
+    .alert-warn {
+      background: oklch(98.5% 0.018 80);
+      border: 1px solid oklch(87% 0.06 70);
+      color: oklch(40% 0.1 60);
+    }
+
+    .alert-error {
+      background: oklch(98.5% 0.018 22);
+      border: 1px solid oklch(87% 0.07 22);
+      color: oklch(38% 0.13 22);
+    }
+
+    /* ─────────────────────────────────────────
+       EXPORT SIZE
+    ───────────────────────────────────────── */
+    .export-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .export-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+
+    .export-size-badge {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--r-sm);
+      background: color-mix(in oklch, var(--accent) 8%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+      color: oklch(36% 0.12 250);
+    }
+
+    /* ─────────────────────────────────────────
+       DIVIDER
+    ───────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0;
+    }
+
+    /* ─────────────────────────────────────────
+       STEP LIST
+    ───────────────────────────────────────── */
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow: 0 8px 20px -20px color-mix(in oklch, var(--fg) 24%, transparent);
+    }
+
+    .step-header {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .step-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 9%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+
+    .step-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      line-height: 1.7;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .step-chips {
+      display: flex;
+      gap: 6px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--r-sm);
+      padding: 6px 10px;
+      flex: 1;
+      min-width: 76px;
+    }
+
+    .chip-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+
+    .chip-value {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .step-screenshot-placeholder {
+      aspect-ratio: 16 / 9;
+      background: oklch(97.5% 0.003 240);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.03em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step-footer {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .desc-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+
+    .step-remove {
+      align-self: flex-start;
+      margin-top: 2px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: oklch(48% 0.1 22);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      opacity: 0.75;
+      transition: opacity 0.15s;
+    }
+
+    .step-remove:hover { opacity: 1; }
+
+    /* ─────────────────────────────────────────
+       EMPTY STATE
+    ───────────────────────────────────────── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 56px 20px;
+      border: 1px dashed var(--border);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .empty-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--r-md);
+      background: color-mix(in oklch, var(--accent) 9%, transparent);
+      border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+
+    .empty-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--fg);
+    }
+
+    .empty-desc {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 240px;
+      line-height: 1.6;
+    }
+
+    /* ─────────────────────────────────────────
+       SIDEBAR
+    ───────────────────────────────────────── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: sticky;
+      top: 64px;
+    }
+
+    .sidebar-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 16px 18px;
+    }
+
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: 12px;
+      color: var(--fg);
+    }
+
+    .workflow-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .workflow-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      transition: color 0.2s;
+    }
+
+    .workflow-item:first-child { padding-top: 0; }
+    .workflow-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .workflow-item.active { color: var(--fg); }
+
+    .workflow-num {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 16px;
+      line-height: 2;
+      opacity: 0.5;
+      transition: opacity 0.2s;
+    }
+
+    .workflow-item.active .workflow-num { opacity: 1; }
+
+    /* ─────────────────────────────────────────
+       FLOATING TOOLBAR
+    ───────────────────────────────────────── */
+    .toolbar {
+      position: fixed;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 50;
+      width: 248px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--fg) 4%, transparent),
+        0 6px 28px -4px color-mix(in oklch, var(--fg) 14%, transparent);
+      overflow: hidden;
+      transition: width 0.18s ease;
+      user-select: none;
+    }
+
+    .toolbar-drag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      cursor: grab;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+    }
+
+    .drag-dots {
+      display: grid;
+      grid-template-columns: repeat(2, 3px);
+      gap: 3px;
+      opacity: 0.45;
+      flex-shrink: 0;
+    }
+
+    .drag-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .toolbar-inner { padding: 14px 12px; display: flex; flex-direction: column; gap: 11px; }
+
+    .toolbar-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .toolbar-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rec-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: oklch(82% 0.005 250);
+      flex-shrink: 0;
+      transition: background 0.25s;
+    }
+
+    .rec-dot.live {
+      background: var(--rec);
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    .toolbar-info-label {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .toolbar-step-count {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toolbar-elapsed {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+    }
+
+    .toolbar-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 5px;
+    }
+
+    .btn {
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--r-sm);
+      padding: 7px 10px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background 0.14s, border-color 0.14s, opacity 0.14s;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
+    .btn-accent {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .btn-accent:not(:disabled):hover { background: oklch(53% 0.18 255); }
+
+    .btn-neutral {
+      background: var(--bg);
+      color: var(--fg);
+      border-color: var(--border);
+    }
+
+    .btn-neutral:not(:disabled):hover { background: var(--border); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--fg);
+      border-color: var(--border);
+    }
+
+    .btn-outline:not(:disabled):hover { background: var(--bg); }
+
+    .toolbar-foot {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ─────────────────────────────────────────
+       PROTOTYPE CONTROL BAR
+    ───────────────────────────────────────── */
+    .proto-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: color-mix(in oklch, var(--surface) 94%, transparent);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 90;
+    }
+
+    .proto-label {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .proto-btn {
+      padding: 4px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.14s;
+    }
+
+    .proto-btn.active {
+      background: var(--fg);
+      color: var(--surface);
+      border-color: var(--fg);
+    }
+
+    .proto-btn:hover:not(.active) { border-color: var(--muted); color: var(--fg); }
+
+    .proto-sep { flex: 1; }
+
+    .proto-note {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
+    button:focus-visible,
+    select:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+      border-color: color-mix(in oklch, var(--accent) 55%, var(--border));
+    }
+
+    @media (max-width: 960px) {
+      .toolbar {
+        position: static;
+        transform: none;
+        width: 100%;
+        margin-top: 8px;
+      }
+
+      .layout {
+        padding-bottom: 96px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Topbar ── -->
+  <header class="topbar">
+    <div class="topbar-wordmark">
+      <div class="topbar-wordmark-icon">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="white" stroke-width="1.5"/>
+          <path d="M5 8l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      PSRWeb
+    </div>
+    <div class="topbar-sep"></div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark theme" onclick="toggleTheme()">Dark</button>
+    <div class="status-pill" id="topbar-pill">
+      <span class="status-dot" id="topbar-dot"></span>
+      <span id="topbar-text">Ready</span>
+    </div>
+  </header>
+
+  <!-- ── Two-column layout ── -->
+  <div class="layout">
+
+    <!-- ── Left column ── -->
+    <div>
+
+      <!-- App header -->
+      <div class="card">
+        <div class="app-header">
+          <div class="app-eyebrow">Local-only · No data leaves your browser</div>
+          <div class="app-title">Problem Step Recorder</div>
+          <p class="app-desc">Capture screen steps while troubleshooting, annotate them, and export a self-contained HTML report for sharing with your IT team.</p>
+        </div>
+      </div>
+
+      <!-- Session panel -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Session</span>
+          <span class="status-pill" id="session-pill" style="font-size: 10px;">
+            <span class="status-dot" id="session-dot"></span>
+            <span id="session-text">Idle</span>
+          </span>
+        </div>
+        <div class="card-body">
+
+          <div class="stat-grid">
+            <div class="stat-cell">
+              <div class="stat-label">Periodic interval</div>
+              <div class="stat-value" id="stat-interval">5s</div>
+            </div>
+            <div class="stat-cell">
+              <div class="stat-label">Capture quality</div>
+              <div class="stat-value" id="stat-quality">Native</div>
+            </div>
+          </div>
+
+          <div id="error-zone" class="alert alert-error" style="display:none;"></div>
+          <div id="info-zone" class="alert alert-warn" style="display:none;"></div>
+
+          <div class="field">
+            <div class="field-row">
+              <label class="field-label" for="periodicInput" style="flex:1;">Periodic capture</label>
+              <input type="number" id="periodicInput" min="0" max="300" value="5" />
+              <span class="field-hint">sec</span>
+            </div>
+            <span class="field-hint">Set to 0 to disable. Steps are captured automatically at this interval during recording.</span>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="field">
+            <label class="field-label" for="resolutionSelect">Capture resolution</label>
+            <select id="resolutionSelect">
+              <option value="native">Native stream resolution</option>
+              <option value="1920">1080p max long edge</option>
+              <option value="1280">720p max long edge</option>
+            </select>
+            <span class="field-hint">Controls source detail. Higher resolution means larger export files.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="qualitySelect">HTML export quality</label>
+            <select id="qualitySelect">
+              <option value="lossless">Lossless</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <span class="field-hint" id="quality-hint">Medium JPEG — good balance of file size and detail for most reports.</span>
+          </div>
+
+          <div class="export-row">
+            <span class="export-label">Estimated export size</span>
+            <span class="export-size-badge" id="export-size">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step list -->
+      <div id="step-container"></div>
+
+    </div><!-- /left column -->
+
+    <!-- ── Right sidebar ── -->
+    <aside class="sidebar">
+
+      <div class="sidebar-card">
+        <div class="sidebar-title">Workflow</div>
+        <ol class="workflow-list">
+          <li class="workflow-item active" id="wf1">
+            <span class="workflow-num">01</span>
+            <span>Start recording from the floating toolbar on the right.</span>
+          </li>
+          <li class="workflow-item" id="wf2">
+            <span class="workflow-num">02</span>
+            <span>Perform your troubleshooting steps on the shared source.</span>
+          </li>
+          <li class="workflow-item" id="wf3">
+            <span class="workflow-num">03</span>
+            <span>Stop recording and review the captured steps below.</span>
+          </li>
+          <li class="workflow-item" id="wf4">
+            <span class="workflow-num">04</span>
+            <span>Remove unwanted steps and add descriptions.</span>
+          </li>
+          <li class="workflow-item" id="wf5">
+            <span class="workflow-num">05</span>
+            <span>Export a self-contained HTML report.</span>
+          </li>
+        </ol>
+      </div>
+
+      <div class="sidebar-card">
+        <div class="sidebar-title">Tips</div>
+        <div style="font-size: 12px; color: var(--muted); line-height: 1.65; display: flex; flex-direction: column; gap: 10px;">
+          <p>Use <strong style="color: var(--fg); font-weight: 500;">Window capture</strong> instead of Screen to keep this toolbar out of your screenshots.</p>
+          <p>Stopping screen share automatically ends the recording session.</p>
+          <p>Periodic capture fires even when you're not clicking — useful for long-running operations.</p>
+        </div>
+      </div>
+
+    </aside>
+
+  </div><!-- /layout -->
+
+  <!-- ── Floating toolbar ── -->
+  <aside class="toolbar" id="toolbar">
+    <div class="toolbar-drag" id="toolbar-drag">
+      <div class="drag-dots">
+        <div class="drag-dot"></div><div class="drag-dot"></div>
+        <div class="drag-dot"></div><div class="drag-dot"></div>
+        <div class="drag-dot"></div><div class="drag-dot"></div>
+      </div>
+      <span>Toolbar</span>
+    </div>
+    <div class="toolbar-inner">
+      <div class="toolbar-status">
+        <div class="toolbar-indicator">
+          <div class="rec-dot" id="rec-dot"></div>
+          <div>
+            <div class="toolbar-info-label" id="tb-label">Everything stays on your device</div>
+            <div class="toolbar-step-count" id="tb-steps">0 steps captured</div>
+          </div>
+        </div>
+        <div class="toolbar-elapsed" id="tb-elapsed">00:00</div>
+      </div>
+      <div class="toolbar-btns">
+        <button class="btn btn-accent" id="btn-start" onclick="setAppState('recording')">Start</button>
+        <button class="btn btn-neutral" id="btn-stop" disabled onclick="setAppState('stopped')">Stop</button>
+        <button class="btn btn-outline" id="btn-export" disabled onclick="doExport()">Export</button>
+      </div>
+      <div class="toolbar-foot" id="tb-foot">Stop sharing will also end the recording.</div>
+    </div>
+  </aside>
+
+  <!-- ── Prototype control bar ── -->
+  <div class="proto-bar">
+    <span class="proto-label">Prototype state:</span>
+    <button class="proto-btn active" onclick="setAppState('idle')" id="pb-idle">Idle</button>
+    <button class="proto-btn" onclick="setAppState('recording')" id="pb-recording">Recording</button>
+    <button class="proto-btn" onclick="setAppState('stopped')" id="pb-stopped">Stopped · 3 steps</button>
+    <div class="proto-sep"></div>
+    <span class="proto-note">Design prototype — not connected to live recording</span>
+  </div>
+
+  <script>
+    const STEPS = [
+      {
+        id: 'a', num: 1,
+        at: '2025-05-09T06:32:11.000Z',
+        trigger: 'left',
+        res: '1920 × 1080',
+        cursor: '942, 456',
+        desc: 'Opened Device Manager from the Start menu to inspect driver status.'
+      },
+      {
+        id: 'b', num: 2,
+        at: '2025-05-09T06:32:28.000Z',
+        trigger: 'double',
+        res: '1920 × 1080',
+        cursor: '730, 612',
+        desc: ''
+      },
+      {
+        id: 'c', num: 3,
+        at: '2025-05-09T06:32:44.000Z',
+        trigger: 'periodic',
+        res: '1920 × 1080',
+        cursor: '1102, 388',
+        desc: 'Driver error Code 43 — hardware reported a problem. Noted for escalation.'
+      }
+    ];
+
+    const TRIGGERS = {
+      left: 'Left click', right: 'Right click', double: 'Double click',
+      'keyboard-enter': 'Enter key', 'keyboard-tab': 'Tab key',
+      periodic: 'Periodic', 'window-change': 'Window change'
+    };
+
+    const QUALITY_HINTS = {
+      lossless: 'Lossless PNG — largest file size, pixel-accurate. Use when screenshots must be exact.',
+      medium:   'Medium JPEG — good balance of file size and detail for most reports.',
+      low:      'Compressed JPEG — smallest file size. Use when sharing over constrained channels.'
+    };
+
+    const EXPORT_SIZES = { lossless: '18.4 MB', medium: '4.2 MB', low: '1.8 MB' };
+    const THEME_KEY = 'psrweb-prototype-theme';
+
+    let appState = 'idle';
+    let elapsedMs = 0;
+    let ticker = null;
+    let removed = new Set();
+
+    function resolveInitialTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function applyTheme(theme) {
+      const next = theme === 'dark' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+
+      const btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      const isDark = next === 'dark';
+      btn.textContent = isDark ? 'Light' : 'Dark';
+      btn.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    }
+
+    function fmt(ms) {
+      const s = Math.floor(ms / 1000);
+      return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    function fmtUtc(iso) { return iso.slice(0, 19).replace('T', ' ') + ' UTC'; }
+
+    function fmtLocal(iso) {
+      return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function setAppState(next) {
+      if (ticker) { clearInterval(ticker); ticker = null; }
+      appState = next;
+      removed.clear();
+
+      if (next === 'recording') {
+        elapsedMs = 0;
+        ticker = setInterval(() => { elapsedMs += 1000; renderToolbar(); }, 1000);
+      } else if (next === 'stopped') {
+        elapsedMs = 33000;
+      } else {
+        elapsedMs = 0;
+      }
+
+      renderAll();
+      ['idle', 'recording', 'stopped'].forEach(s => {
+        const id = s === 'stopped' ? 'pb-stopped' : `pb-${s}`;
+        document.getElementById(id)?.classList.toggle('active', s === next);
+      });
+    }
+
+    function renderAll() {
+      renderTopbar();
+      renderSessionPanel();
+      renderToolbar();
+      renderSteps();
+      renderWorkflow();
+    }
+
+    function renderTopbar() {
+      const pill = document.getElementById('topbar-pill');
+      const text = document.getElementById('topbar-text');
+      pill.className = 'status-pill' + (appState === 'recording' ? ' recording' : '');
+      text.textContent = appState === 'recording' ? 'Recording'
+        : appState === 'stopped' ? `${STEPS.filter(s => !removed.has(s.id)).length} steps`
+        : 'Ready';
+    }
+
+    function renderSessionPanel() {
+      const pill = document.getElementById('session-pill');
+      const text = document.getElementById('session-text');
+      pill.className = 'status-pill' + (appState === 'recording' ? ' recording' : '');
+      pill.style.fontSize = '10px';
+      text.textContent = appState === 'recording' ? 'Recording'
+        : appState === 'stopped' ? 'Stopped' : 'Idle';
+
+      const quality = document.getElementById('qualitySelect').value;
+      document.getElementById('quality-hint').textContent = QUALITY_HINTS[quality] || '';
+      document.getElementById('export-size').textContent =
+        appState === 'stopped' ? EXPORT_SIZES[quality] || '—' : '—';
+    }
+
+    function renderToolbar() {
+      const recDot = document.getElementById('rec-dot');
+      const tbLabel = document.getElementById('tb-label');
+      const tbSteps = document.getElementById('tb-steps');
+      const tbElapsed = document.getElementById('tb-elapsed');
+      const btnStart = document.getElementById('btn-start');
+      const btnStop = document.getElementById('btn-stop');
+      const btnExport = document.getElementById('btn-export');
+      const tbFoot = document.getElementById('tb-foot');
+
+      const visCount = appState === 'stopped' ? STEPS.filter(s => !removed.has(s.id)).length : 0;
+      tbSteps.textContent = `${visCount} step${visCount !== 1 ? 's' : ''} captured`;
+      tbElapsed.textContent = fmt(elapsedMs);
+
+      if (appState === 'recording') {
+        recDot.classList.add('live');
+        tbLabel.textContent = 'Recording…';
+        btnStart.disabled = true; btnStop.disabled = false; btnExport.disabled = true;
+        tbFoot.textContent = 'Stop sharing will also end the recording.';
+      } else if (appState === 'stopped') {
+        recDot.classList.remove('live');
+        tbLabel.textContent = 'Session ended';
+        btnStart.disabled = false; btnStop.disabled = true; btnExport.disabled = false;
+        tbFoot.textContent = 'Review steps below, then export your report.';
+      } else {
+        recDot.classList.remove('live');
+        tbLabel.textContent = 'Everything stays on your device';
+        btnStart.disabled = false; btnStop.disabled = true; btnExport.disabled = true;
+        tbFoot.textContent = 'Stop sharing will also end the recording.';
+      }
+    }
+
+    function renderSteps() {
+      const el = document.getElementById('step-container');
+
+      if (appState === 'idle') {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="2" y="2" width="12" height="12" rx="2"/>
+                <path d="M2 5.5h12"/><path d="M5.5 2v3.5"/><path d="M10.5 2v3.5"/>
+              </svg>
+            </div>
+            <div class="empty-title">No steps yet</div>
+            <p class="empty-desc">Start a recording session to begin capturing troubleshooting steps.</p>
+          </div>`;
+        return;
+      }
+
+      if (appState === 'recording') {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="4" fill="currentColor" style="animation: blink 1.4s ease-in-out infinite;"/>
+              </svg>
+            </div>
+            <div class="empty-title">Recording in progress</div>
+            <p class="empty-desc">Steps will appear here once you stop recording.</p>
+          </div>`;
+        return;
+      }
+
+      const visible = STEPS.filter(s => !removed.has(s.id));
+      if (visible.length === 0) {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-title">All steps removed</div>
+            <p class="empty-desc">Start a new recording to capture more steps.</p>
+          </div>`;
+        return;
+      }
+
+      el.innerHTML = `<div class="step-list">${visible.map(s => `
+        <div class="step-card" id="sc-${s.id}">
+          <div class="step-header">
+            <span class="step-badge">Step ${String(s.num).padStart(2, '0')}</span>
+            <div class="step-meta">
+              <div>${fmtUtc(s.at)}</div>
+              <div>${fmtLocal(s.at)} local</div>
+            </div>
+          </div>
+          <div class="step-chips">
+            <div class="chip">
+              <span class="chip-label">Action</span>
+              <span class="chip-value">${TRIGGERS[s.trigger] || s.trigger}</span>
+            </div>
+            <div class="chip">
+              <span class="chip-label">Resolution</span>
+              <span class="chip-value">${s.res}</span>
+            </div>
+            <div class="chip">
+              <span class="chip-label">Cursor</span>
+              <span class="chip-value">${s.cursor}</span>
+            </div>
+          </div>
+          <div class="step-screenshot-placeholder">
+            screenshot · ${s.res}
+          </div>
+          <div class="step-footer">
+            <label class="desc-label" for="desc-${s.id}">Description</label>
+            <textarea id="desc-${s.id}" rows="3" placeholder="Add a note about what happened in this step…">${s.desc}</textarea>
+            <button class="step-remove" onclick="removeStep('${s.id}')">Remove step</button>
+          </div>
+        </div>`).join('')}</div>`;
+    }
+
+    function renderWorkflow() {
+      [1,2,3,4,5].forEach(n => document.getElementById(`wf${n}`)?.classList.remove('active'));
+      if (appState === 'idle') document.getElementById('wf1')?.classList.add('active');
+      else if (appState === 'recording') document.getElementById('wf2')?.classList.add('active');
+      else { document.getElementById('wf3')?.classList.add('active');
+             document.getElementById('wf4')?.classList.add('active');
+             document.getElementById('wf5')?.classList.add('active'); }
+    }
+
+    function removeStep(id) {
+      removed.add(id);
+      renderSteps(); renderToolbar(); renderTopbar();
+    }
+
+    function doExport() {
+      const btn = document.getElementById('btn-export');
+      btn.textContent = 'Exporting…'; btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = 'Export'; btn.disabled = false;
+        const z = document.getElementById('info-zone');
+        z.textContent = 'Export complete — psrweb-medium-2025-05-09.html downloaded.';
+        z.style.display = '';
+        setTimeout(() => { z.style.display = 'none'; }, 4000);
+      }, 1200);
+    }
+
+    document.getElementById('qualitySelect').addEventListener('change', renderSessionPanel);
+    document.getElementById('periodicInput').addEventListener('change', function () {
+      document.getElementById('stat-interval').textContent = `${this.value}s`;
+    });
+    document.getElementById('resolutionSelect').addEventListener('change', function () {
+      document.getElementById('stat-quality').textContent =
+        this.value === 'native' ? 'Native' : `${this.value === '1920' ? '1080' : '720'}p max`;
+    });
+
+    // Toolbar drag
+    const toolbar = document.getElementById('toolbar');
+    let dragOffset = null;
+
+    document.getElementById('toolbar-drag').addEventListener('mousedown', e => {
+      const rect = toolbar.getBoundingClientRect();
+      dragOffset = e.clientY - (rect.top + rect.height / 2);
+      toolbar.style.transform = 'none';
+      toolbar.style.top = (rect.top + rect.height / 2) + 'px';
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (dragOffset === null) return;
+      toolbar.style.top = Math.max(64, Math.min(window.innerHeight - 80, e.clientY - dragOffset)) + 'px';
+    });
+
+    window.addEventListener('mouseup', () => { dragOffset = null; });
+
+    applyTheme(resolveInitialTheme());
+    renderAll();
+  </script>
+</body>
+</html>
