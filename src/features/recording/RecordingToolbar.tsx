@@ -12,7 +12,6 @@ interface RecordingToolbarProps {
   onStart: () => void;
   onStop: () => void;
   onExport: () => void;
-  onCapture: () => void;
 }
 
 const STORAGE_KEY = "psr-toolbar-y";
@@ -122,7 +121,6 @@ export function RecordingToolbar(props: RecordingToolbarProps): JSX.Element {
             onStart={props.onStart}
             onStop={props.onStop}
             onExport={props.onExport}
-            onCapture={props.onCapture}
           />
         </div>
       )}

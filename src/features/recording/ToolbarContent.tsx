@@ -9,7 +9,6 @@ interface ToolbarContentProps {
   onStart: () => void;
   onStop: () => void;
   onExport: () => void;
-  onCapture: () => void;
   compact?: boolean;
 }
 
@@ -36,14 +35,6 @@ export function ToolbarContent(props: ToolbarContentProps): JSX.Element {
         <button className="rounded border border-slate-300 bg-slate-100 px-3 py-1.5 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600" disabled={props.state === "idle" || isStopped} onClick={props.onStop}>Stop</button>
         <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-slate-900 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" disabled={!isStopped} onClick={props.onExport}>Export</button>
       </div>
-      <button
-        className="w-full rounded border border-[oklch(58%_0.18_255)] px-3 py-1.5 text-xs text-[oklch(58%_0.18_255)] transition hover:bg-[oklch(97%_0.03_255)] disabled:opacity-40 dark:hover:bg-[oklch(30%_0.06_255)]"
-        disabled={!isRecording}
-        onClick={props.onCapture}
-      >
-        Capture Step
-      </button>
-
       <p className="text-[11px] text-slate-500 dark:text-slate-400">Stop sharing will stop recording as well.</p>
 
       {props.toolbarVisibleWarning && (

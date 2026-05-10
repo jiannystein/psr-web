@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type WheelEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { CaptureStep } from "@models/models";
-import { formatByteSize, formatResolutionLabel, formatTimestampInfo, formatTriggerLabel } from "@utils/presentation";
-import { Button, IconButton } from "@components/Button";
+import { formatByteSize, formatTimestampInfo, formatTriggerLabel } from "@utils/presentation";
+import { Button } from "@components/Button";
+import { AnnotationCanvas } from "./AnnotationCanvas";
 
 interface StepListProps {
   steps: CaptureStep[];
@@ -11,31 +12,22 @@ interface StepListProps {
   canDelete: boolean;
   onDescriptionChange: (stepId: string, description: string) => void;
   onDeleteStep: (stepId: string) => void;
+  onExport?: () => void;
+  onNewRecording?: () => void;
 }
 
 export function StepList(props: StepListProps): JSX.Element {
   const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
-  const [zoomedStepId, setZoomedStepId] = useState<string | null>(null);
-  const [zoomScale, setZoomScale] = useState(1);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSteps, setSelectedSteps] = useState<Set<string>>(new Set());
 
-  const closeZoom = (): void => {
-    setZoomedStepId(null);
-    setZoomScale(1);
-  };
-
-  const openZoom = (stepId: string): void => {
-    setZoomedStepId(stepId);
-    setZoomScale(1);
-  };
-
-  const onZoomWheel = (event: WheelEvent<HTMLDivElement>): void => {
-    event.preventDefault();
-    const sensitivity = 0.0015;
-    const nextScale = zoomScale + (-event.deltaY * sensitivity);
-    setZoomScale(Math.max(1, Math.min(6, Number(nextScale.toFixed(2)))));
-  };
+  // Reset selection mode when state changes away from stopped
+  useEffect(() => {
+    if (props.sessionState !== "stopped") {
+      setSelectionMode(false);
+      setSelectedSteps(new Set());
+    }
+  }, [props.sessionState]);
 
   const toggleSelectionMode = (): void => {
     setSelectionMode(!selectionMode);
@@ -71,7 +63,13 @@ export function StepList(props: StepListProps): JSX.Element {
     cancelSelectionMode();
   };
 
+  // Only load preview URLs once session is stopped (hide screenshots during recording)
   useEffect(() => {
+    if (props.sessionState !== "stopped") {
+      setPreviewMap({});
+      return;
+    }
+
     let cancelled = false;
     const objectUrls: string[] = [];
 
@@ -84,7 +82,6 @@ export function StepList(props: StepListProps): JSX.Element {
           objectUrls.push(url);
         }
       }
-
       if (!cancelled) {
         setPreviewMap(next);
       }
@@ -96,7 +93,7 @@ export function StepList(props: StepListProps): JSX.Element {
       cancelled = true;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [props.steps, props.getPreviewUrl]);
+  }, [props.steps, props.getPreviewUrl, props.sessionState]);
 
   // Session stats calculations
   const sessionStats = useMemo(() => {
@@ -139,494 +136,286 @@ export function StepList(props: StepListProps): JSX.Element {
     return "Ready";
   }, [props.sessionState, sessionStats.duration]);
 
-  if (props.steps.length === 0) {
-    if (props.sessionState === "idle" || props.sessionState === "requesting") {
-      return (
-        <div
-          className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-10 text-center shadow-sm"
-          style={{
-            borderRadius: "var(--r)",
-          }}
-        >
-          <p
-            className="font-semibold text-[var(--fg)]"
-            style={{
-              fontSize: "14px",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Approve screen sharing to start recording.
-          </p>
-          <p
-            className="mt-2 text-[var(--muted)]"
-            style={{
-              fontSize: "12px",
-              lineHeight: "1.6",
-            }}
-          >
-            Steps will appear here once you start capturing.
-          </p>
-        </div>
-      );
-    }
-
-    if (props.sessionState === "recording" || props.sessionState === "paused") {
-      return (
-        <div
-          className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] p-10 text-center shadow-sm"
-          style={{
-            borderRadius: "var(--r)",
-          }}
-        >
-          <p
-            className="font-semibold text-[var(--fg)]"
-            style={{
-              fontSize: "14px",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Recording in progress
-          </p>
-          <p
-            className="mt-2 text-[var(--muted)]"
-            style={{
-              fontSize: "12px",
-              lineHeight: "1.6",
-            }}
-          >
-            Steps will appear here once you stop recording.
-          </p>
-        </div>
-      );
-    }
-
+  // ── Idle / Requesting: no steps yet ──
+  if (props.steps.length === 0 && (props.sessionState === "idle" || props.sessionState === "requesting")) {
     return (
-      <div
-        className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-10 text-center shadow-sm"
-        style={{
-          borderRadius: "var(--r)",
-        }}
-      >
-        <p
-          className="font-semibold text-[var(--fg)]"
-          style={{
-            fontSize: "14px",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          All steps removed
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-10 text-center shadow-sm" style={{ borderRadius: "var(--r)" }}>
+        <p className="font-semibold text-[var(--fg)]" style={{ fontSize: "14px", letterSpacing: "-0.01em" }}>
+          Approve screen sharing to start recording.
         </p>
-        <p
-          className="mt-2 text-[var(--muted)]"
-          style={{
-            fontSize: "12px",
-            lineHeight: "1.6",
-          }}
-        >
-          Start a new recording to capture more steps.
+        <p className="mt-2 text-[var(--muted)]" style={{ fontSize: "12px", lineHeight: "1.6" }}>
+          Steps will appear here after you stop the recording.
         </p>
       </div>
     );
   }
 
-  return (
-    <>
-      {/* Topbar */}
-      <div
-        className="sticky top-0 z-40 flex h-12 items-center gap-3 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_88%,transparent)] backdrop-blur-sm px-5"
-        style={{
-          fontFamily: "var(--font-display)",
-        }}
-      >
-        <div className="flex items-center gap-2 font-semibold text-[var(--fg)]" style={{ fontSize: "14px", letterSpacing: "-0.025em" }}>
-          <span>PSRWeb</span>
+  // ── Recording / Paused: hide all screenshots, show live counter ──
+  if (props.sessionState === "recording" || props.sessionState === "paused") {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface)] shadow-sm overflow-hidden" style={{ borderRadius: "var(--r)" }}>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border)]">
+          <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-[oklch(55%_0.2_22)]" />
+          <span className="text-sm font-semibold text-[var(--fg)]">
+            {props.sessionState === "recording" ? "Recording in progress" : "Recording paused"}
+          </span>
+          <span className="ml-auto font-mono text-xs text-[var(--muted)]">{props.steps.length} step{props.steps.length !== 1 ? "s" : ""} captured</span>
         </div>
-        <div className="flex-1" />
-        <div
-          className="flex items-center gap-2 border border-[var(--border)] rounded-full px-3 py-1 text-[var(--muted)]"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "11px",
-          }}
-        >
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{
-              background: props.sessionState === "stopped" ? "oklch(70% 0.008 250)" : "oklch(55% 0.2 22)",
-            }}
-          />
-          {badgeLabel}
+        <div className="px-5 py-6 text-center text-[var(--muted)]" style={{ fontSize: "12px", lineHeight: "1.7" }}>
+          Screenshots are hidden during capture to avoid spoiling the recording.
+          <br />
+          They will appear here after you stop.
         </div>
-      </div>
-
-      {/* Banner */}
-      {props.sessionState === "stopped" && (
-        <div
-          className="border-b border-[var(--border)] bg-[var(--surface)] px-5 py-4"
-          style={{
-            display: "flex",
-            alignItems: "stretch",
-            gap: "24px",
-          }}
-        >
-          <div
-            className="flex flex-col justify-center pr-6 border-r border-[var(--border)]"
-            style={{
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            <p
-              className="text-[var(--muted)] mb-0.5"
-              style={{
-                fontSize: "9px",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Started
-            </p>
-            <p
-              className="font-semibold text-[var(--fg)]"
-              style={{
-                fontSize: "16px",
-                letterSpacing: "-0.03em",
-                lineHeight: "1",
-              }}
-            >
-              {sessionStats.startTime}
-            </p>
-          </div>
-          <div
-            className="flex flex-col justify-center pr-6 border-r border-[var(--border)]"
-            style={{
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            <p
-              className="text-[var(--muted)] mb-0.5"
-              style={{
-                fontSize: "9px",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Duration
-            </p>
-            <p
-              className="font-semibold text-[var(--fg)]"
-              style={{
-                fontSize: "16px",
-                letterSpacing: "-0.03em",
-                lineHeight: "1",
-              }}
-            >
-              {sessionStats.duration}
-            </p>
-          </div>
-          <div
-            className="flex flex-col justify-center pr-6 border-r border-[var(--border)]"
-            style={{
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            <p
-              className="text-[var(--muted)] mb-0.5"
-              style={{
-                fontSize: "9px",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Steps
-            </p>
-            <p
-              className="font-semibold text-[var(--fg)]"
-              style={{
-                fontSize: "16px",
-                letterSpacing: "-0.03em",
-                lineHeight: "1",
-              }}
-            >
-              {sessionStats.stepCount}
-            </p>
-          </div>
-          <div style={{ fontFamily: "var(--font-mono)" }}>
-            <p
-              className="text-[var(--muted)] mb-0.5"
-              style={{
-                fontSize: "9px",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Total Size
-            </p>
-            <p
-              className="font-semibold text-[var(--fg)]"
-              style={{
-                fontSize: "16px",
-                letterSpacing: "-0.03em",
-                lineHeight: "1",
-              }}
-            >
-              {formatByteSize(sessionStats.totalSize)}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Steps Header */}
-      <div
-        className="flex items-center gap-2 px-5 py-3 border-b border-[var(--border)]"
-        style={{
-          fontFamily: "var(--font-display)",
-        }}
-      >
-        <p
-          className="font-semibold text-[var(--fg)]"
-          style={{
-            fontSize: "13px",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          Captured steps
-        </p>
-        <p
-          className="text-[var(--muted)]"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "11px",
-          }}
-        >
-          {props.steps.length} total
-        </p>
-        <div className="flex-1" />
-        {!selectionMode && props.canDelete && (
-          <Button variant="secondary" size="sm" onClick={toggleSelectionMode}>
-            Select steps
-          </Button>
-        )}
-        {selectionMode && (
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={selectAll}>
-              All
-            </Button>
-            <Button variant="secondary" size="sm" onClick={selectNone}>
-              None
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Steps List */}
-      <div className="flex flex-col gap-3 p-5">
-        {props.steps.map((step) => (
-          <article
-            key={step.id}
-            className={`rounded-lg border overflow-hidden transition-all cursor-pointer ${
-              selectedSteps.has(step.id)
-                ? "border-[var(--accent)] shadow-[0_0_0_2px_color-mix(in_oklch,var(--accent)_16%,transparent)]"
-                : "border-[var(--border)]"
-            } bg-[var(--surface)]`}
-            style={{
-              borderRadius: "var(--r)",
-            }}
-            onClick={() => {
-              if (selectionMode) {
-                toggleStepSelection(step.id);
-              }
-            }}
-          >
-            {/* Card Header */}
-            <div
-              className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]"
-              style={{
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              {selectionMode && (
-                <input
-                  type="checkbox"
-                  checked={selectedSteps.has(step.id)}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    toggleStepSelection(step.id);
-                  }}
-                  className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
-                />
-              )}
-              <span
-                className="px-2 py-1 rounded text-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] border border-[color-mix(in_oklch,var(--accent)_22%,transparent)]"
-                style={{
-                  fontSize: "10px",
-                  fontWeight: "700",
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                }}
+        {props.steps.length > 0 && (
+          <div className="px-5 pb-5 flex flex-col gap-2">
+            {props.steps.map((step) => (
+              <div
+                key={step.id}
+                className="flex items-center gap-3 rounded border border-[var(--border)] bg-[var(--bg)] px-4 py-2.5"
+                style={{ fontFamily: "var(--font-mono)" }}
               >
-                Step {step.stepNumber}
-              </span>
-              <div className="flex gap-1 flex-wrap">
                 <span
-                  className="px-2 py-0.5 rounded text-[var(--muted)] bg-[var(--bg)] border border-[var(--border)]"
-                  style={{
-                    fontSize: "10px",
-                  }}
+                  className="px-2 py-0.5 rounded text-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] border border-[color-mix(in_oklch,var(--accent)_22%,transparent)]"
+                  style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}
                 >
+                  Step {step.stepNumber}
+                </span>
+                <span className="text-[var(--muted)]" style={{ fontSize: "10px" }}>
                   {formatTriggerLabel(step.triggerType)}
                 </span>
-                <span
-                  className="px-2 py-0.5 rounded text-[var(--muted)] bg-[var(--bg)] border border-[var(--border)]"
-                  style={{
-                    fontSize: "10px",
-                  }}
-                >
-                  {formatResolutionLabel(step.image.width, step.image.height)}
-                </span>
-                <span
-                  className="px-2 py-0.5 rounded text-[var(--muted)] bg-[var(--bg)] border border-[var(--border)]"
-                  style={{
-                    fontSize: "10px",
-                  }}
-                >
-                  {step.cursor.xPx}, {step.cursor.yPx}
+                <span className="ml-auto text-[var(--muted)]" style={{ fontSize: "10px" }}>
+                  {formatTimestampInfo(step.capturedAt).localTime}
                 </span>
               </div>
-              <div className="flex-1" />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Stopped with 0 steps ──
+  if (props.steps.length === 0) {
+    return (
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-10 text-center shadow-sm" style={{ borderRadius: "var(--r)" }}>
+        <p className="font-semibold text-[var(--fg)]" style={{ fontSize: "14px", letterSpacing: "-0.01em" }}>
+          No steps captured
+        </p>
+        <p className="mt-2 text-[var(--muted)]" style={{ fontSize: "12px", lineHeight: "1.6" }}>
+          Start a new recording to capture steps.
+        </p>
+        {props.onNewRecording && (
+          <button
+            type="button"
+            onClick={props.onNewRecording}
+            className="mt-4 rounded-md border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg)] hover:bg-[var(--bg)] transition-colors"
+          >
+            New Recording
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── Stopped with steps: full review screen ──
+  return (
+    <>
+      {/* Session banner */}
+      <div
+        className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm"
+        style={{ borderRadius: "var(--r)" }}
+      >
+        {/* Banner header: stats + actions */}
+        <div className="border-b border-[var(--border)] px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* Stats */}
+          <div className="flex items-stretch gap-0 flex-wrap">
+            {[
+              { label: "Started", value: sessionStats.startTime },
+              { label: "Duration", value: sessionStats.duration },
+              { label: "Steps", value: String(sessionStats.stepCount) },
+              { label: "Size", value: formatByteSize(sessionStats.totalSize) },
+            ].map((stat, i) => (
               <div
-                className="text-right"
-                style={{
-                  fontSize: "10px",
-                  lineHeight: "1.7",
-                }}
+                key={stat.label}
+                className={`flex flex-col justify-center py-1 ${i > 0 ? "pl-5 ml-5 border-l border-[var(--border)]" : ""}`}
+                style={{ fontFamily: "var(--font-mono)" }}
               >
-                <div className="text-[var(--muted)]">{formatTimestampInfo(step.capturedAt).isoUtc}</div>
-                <div className="text-[var(--muted)]">{formatTimestampInfo(step.capturedAt).localTime}</div>
+                <p className="text-[var(--muted)] mb-0.5" style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {stat.label}
+                </p>
+                <p className="font-semibold text-[var(--fg)]" style={{ fontSize: "15px", letterSpacing: "-0.03em", lineHeight: "1" }}>
+                  {stat.value}
+                </p>
               </div>
-              {!selectionMode && props.canDelete && (
-                <IconButton
-                  icon={
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M2.5 4.5h11M4.5 4.5V3h7v1.5M5 7v5M8 7v5M11 7v5" strokeLinecap="round" />
-                    </svg>
-                  }
-                  label="Delete step"
-                  onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                    e.stopPropagation();
-                    props.onDeleteStep(step.id);
-                  }}
-                  className="!text-[var(--danger)] hover:!bg-[oklch(98%_0.015_22)]"
-                />
-              )}
-            </div>
+            ))}
+          </div>
 
-            {/* Screenshot */}
-            {previewMap[step.id] && (
-              <img
-                src={previewMap[step.id]}
-                alt={`Capture step ${step.stepNumber}`}
-                className="w-full cursor-zoom-in border-b border-[var(--border)]"
-                style={{
-                  aspectRatio: "16 / 9",
-                  objectFit: "cover",
-                }}
-                onClick={() => openZoom(step.id)}
-              />
+          <div className="flex-1" />
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {props.onNewRecording && (
+              <Button variant="secondary" size="md" onClick={props.onNewRecording}>
+                New Recording
+              </Button>
             )}
+            {props.onExport && (
+              <Button variant="primary" size="md" onClick={props.onExport}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M8 3v8M5 8l3 3 3-3" /><path d="M3 13h10" />
+                </svg>
+                Export HTML
+              </Button>
+            )}
+          </div>
+        </div>
 
-            {/* Card Footer */}
-            <div className="p-4">
-              <label
-                className="block font-medium text-[var(--muted)] mb-2"
-                htmlFor={`desc-${step.id}`}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "9px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Description
-              </label>
-              <textarea
-                id={`desc-${step.id}`}
-                className="w-full rounded p-2 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_10%,transparent)] resize-none"
-                rows={3}
-                style={{
-                  fontSize: "13px",
-                  lineHeight: "1.55",
-                }}
-                defaultValue={step.annotation.description}
-                onBlur={(event) => props.onDescriptionChange(step.id, event.target.value)}
-              />
+        {/* Steps sub-header */}
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--border)]">
+          <span className="font-semibold text-[var(--fg)]" style={{ fontSize: "13px", letterSpacing: "-0.01em" }}>
+            Captured steps
+          </span>
+          <span className="text-[var(--muted)]" style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+            {props.steps.length} total
+          </span>
+          <div className="flex-1" />
+          {!selectionMode && props.canDelete && (
+            <Button variant="secondary" size="sm" onClick={toggleSelectionMode}>
+              Select steps
+            </Button>
+          )}
+          {selectionMode && (
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={selectAll}>All</Button>
+              <Button variant="secondary" size="sm" onClick={selectNone}>None</Button>
             </div>
-          </article>
-        ))}
+          )}
+        </div>
+
+        {/* Step cards */}
+        <div className="flex flex-col gap-4 p-5">
+          {props.steps.map((step) => (
+            <article
+              key={step.id}
+              className={[
+                "rounded-lg border overflow-hidden transition-all",
+                selectionMode ? "cursor-pointer" : "",
+                selectedSteps.has(step.id)
+                  ? "border-[var(--accent)] shadow-[0_0_0_2px_color-mix(in_oklch,var(--accent)_16%,transparent)]"
+                  : "border-[var(--border)]",
+                "bg-[var(--surface)]",
+              ].join(" ")}
+              style={{ borderRadius: "var(--r)" }}
+              onClick={() => { if (selectionMode) toggleStepSelection(step.id); }}
+            >
+              {/* Card header */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]" style={{ fontFamily: "var(--font-mono)" }}>
+                {selectionMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedSteps.has(step.id)}
+                    onChange={(e) => { e.stopPropagation(); toggleStepSelection(step.id); }}
+                    className="w-4 h-4 accent-[var(--accent)] cursor-pointer"
+                  />
+                )}
+                <span
+                  className="px-2 py-1 rounded text-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] border border-[color-mix(in_oklch,var(--accent)_22%,transparent)]"
+                  style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}
+                >
+                  Step {step.stepNumber}
+                </span>
+                <div className="flex gap-1 flex-wrap">
+                  <span className="px-2 py-0.5 rounded text-[var(--muted)] bg-[var(--bg)] border border-[var(--border)]" style={{ fontSize: "10px" }}>
+                    {formatTriggerLabel(step.triggerType)}
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[var(--muted)] bg-[var(--bg)] border border-[var(--border)]" style={{ fontSize: "10px" }}>
+                    {step.image.width}×{step.image.height}
+                  </span>
+                </div>
+                <div className="flex-1" />
+                <span className="text-[var(--muted)]" style={{ fontSize: "10px" }}>
+                  {formatTimestampInfo(step.capturedAt).localTime}
+                </span>
+                {!selectionMode && props.canDelete && (
+                  <button
+                    type="button"
+                    title="Delete step"
+                    onClick={(e) => { e.stopPropagation(); props.onDeleteStep(step.id); }}
+                    className="text-[var(--danger)] opacity-60 hover:opacity-100 transition-opacity text-[10px] underline underline-offset-2 ml-2"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              {/* Screenshot with annotation canvas */}
+              {previewMap[step.id] ? (
+                <AnnotationCanvas imgUrl={previewMap[step.id]} />
+              ) : (
+                <div
+                  className="w-full border-b border-[var(--border)] flex items-center justify-center text-[var(--muted)]"
+                  style={{ aspectRatio: "16/9", background: "var(--bg)", fontSize: "12px" }}
+                >
+                  Loading…
+                </div>
+              )}
+
+              {/* Description */}
+              <div className="p-4">
+                <label
+                  className="block font-medium text-[var(--muted)] mb-2"
+                  htmlFor={`desc-${step.id}`}
+                  style={{ fontFamily: "var(--font-mono)", fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.08em" }}
+                >
+                  Description
+                </label>
+                <textarea
+                  id={`desc-${step.id}`}
+                  className="w-full rounded p-2 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_10%,transparent)] resize-none"
+                  rows={3}
+                  style={{ fontSize: "13px", lineHeight: "1.55" }}
+                  defaultValue={step.annotation.description}
+                  onBlur={(event) => props.onDescriptionChange(step.id, event.target.value)}
+                />
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
 
-      {/* Bulk Selection Bar */}
+      {/* Bulk selection bar */}
       {selectionMode && (
-        <div
-          className="fixed bottom-0 left-0 right-0 bg-[oklch(18%_0.012_250)] text-white px-5 py-3 border-t border-[oklch(25%_0.01_250)] flex items-center gap-3 z-50"
-          style={{
-            fontFamily: "var(--font-mono)",
-          }}
-        >
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-[oklch(18%_0.012_250)] text-white px-5 py-3 border-t border-[oklch(25%_0.01_250)] flex items-center gap-3">
           <div className="flex flex-col gap-0.5">
-            <p
-              className="text-[var(--muted)] font-variant-numeric: tabular-nums"
-              style={{
-                fontSize: "12px",
-              }}
-            >
+            <p className="text-[oklch(70%_0.008_250)]" style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
               {selectedSteps.size} step{selectedSteps.size !== 1 ? "s" : ""} selected
             </p>
-            <p
-              className="text-[oklch(50%_0.008_250)]"
-              style={{
-                fontSize: "10px",
-              }}
-            >
+            <p className="text-[oklch(50%_0.008_250)]" style={{ fontFamily: "var(--font-mono)", fontSize: "10px" }}>
               Selected steps will be permanently removed from this session.
             </p>
           </div>
           <div className="flex-1" />
-          <Button variant="secondary" size="md" onClick={cancelSelectionMode}>
+          <button
+            type="button"
+            onClick={cancelSelectionMode}
+            className="h-8 px-4 rounded text-sm font-medium bg-[oklch(26%_0.012_250)] text-[oklch(72%_0.008_250)] border-none cursor-pointer hover:bg-[oklch(30%_0.012_250)] transition-colors"
+          >
             Cancel
-          </Button>
-          <Button
-            variant="danger"
-            size="md"
+          </button>
+          <button
+            type="button"
             disabled={selectedSteps.size === 0}
             onClick={deleteSelected}
+            className="h-8 px-4 rounded text-sm font-medium bg-[oklch(55%_0.2_22)] text-white border-none cursor-pointer hover:bg-[oklch(48%_0.2_22)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Delete selected
-          </Button>
+          </button>
         </div>
       )}
 
-      {/* Zoom Modal */}
-      {zoomedStepId && previewMap[zoomedStepId] && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-3 cursor-zoom-out"
-          onClick={closeZoom}
-          onWheel={onZoomWheel}
-        >
-          <img
-            src={previewMap[zoomedStepId]}
-            alt="Zoomed step screenshot"
-            className="max-h-[92vh] max-w-[92vw] select-none rounded shadow-2xl border border-[var(--border)]"
-            style={{
-              transform: `scale(${zoomScale})`,
-              transformOrigin: "center center",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
-
-      {/* Spacing for fixed bar */}
-      {selectionMode && <div style={{ height: "80px" }} />}
+      {/* Spacing for fixed selection bar */}
+      {selectionMode && <div style={{ height: "72px" }} />}
     </>
   );
 }

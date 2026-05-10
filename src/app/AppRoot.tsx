@@ -7,22 +7,8 @@ import { saveBlob } from "@features/export/saveFile";
 import { formatByteSize, formatResolutionLabel, qualityPresetDescription, type ExportQualityPreset } from "@utils/presentation";
 
 const controller = createCaptureController();
-const THEME_KEY = "psrweb-theme";
 
-type ThemeMode = "light" | "dark";
-
-function resolveInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-
-  const saved = window.localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") {
-    return saved;
-  }
-
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
+const GITHUB_URL = "https://github.com/jiannystein/psr-web";
 
 const LOGO_URL = "/psr-web/psr-logo-mark.svg";
 
@@ -37,20 +23,11 @@ export function AppRoot(): JSX.Element {
   const [exportQuality, setExportQuality] = useState<ExportQualityPreset>("720p");
   const [estimatedExportSizeBytes, setEstimatedExportSizeBytes] = useState<number | null>(null);
   const [isEstimatingExportSize, setIsEstimatingExportSize] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>(() => resolveInitialTheme());
 
   useEffect(() => controller.subscribe(setState), []);
 
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    const isDark = theme === "dark";
-    document.documentElement.classList.toggle("dark", isDark);
-    document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+  // Derive review mode: stopped with at least one step
+  const isReviewMode = state.context.state === "stopped" && state.steps.length > 0;
 
   const topbarStatusLabel = useMemo(() => {
     if (state.context.state === "recording") {
@@ -162,21 +139,22 @@ export function AppRoot(): JSX.Element {
           <span>PSRWeb</span>
         </div>
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        <a
+          href={GITHUB_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
         >
-          {theme === "dark" ? "Light" : "Dark"}
-        </button>
+          GitHub
+        </a>
         <span className="rounded-full border border-slate-300 px-3 py-1 text-[11px] text-slate-600 dark:border-slate-600 dark:text-slate-300">
           {topbarStatusLabel}
         </span>
       </div>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-7 md:px-8 lg:grid-cols-[minmax(0,1fr)_270px] lg:items-start">
+      <section className={`mx-auto grid w-full gap-5 px-4 py-7 md:px-8 lg:items-start ${isReviewMode ? "max-w-4xl" : "max-w-6xl lg:grid-cols-[minmax(0,1fr)_270px]"}`}>
         <div className="space-y-6">
+          {!isReviewMode && (
           <header className="rounded-xl border border-slate-300/70 bg-white p-6 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)] dark:border-slate-700/80 dark:bg-[#1a2130]">
             <p className="text-[10px] uppercase tracking-[0.12em] text-[oklch(58%_0.18_255)]">Local-only · no data leaves your browser</p>
             <div className="mt-2 flex items-center gap-3">
@@ -187,7 +165,9 @@ export function AppRoot(): JSX.Element {
               Capture screen steps while troubleshooting, annotate each step, and export a self-contained HTML report for IT teams.
             </p>
           </header>
+          )}
 
+          {!isReviewMode && (
           <article className="rounded-xl border border-slate-300/70 bg-white p-6 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)] dark:border-slate-700/80 dark:bg-[#1a2130]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Session</h2>
@@ -273,6 +253,7 @@ export function AppRoot(): JSX.Element {
               </div>
             </div>
           </article>
+          )}
 
           <StepList
             steps={state.steps}
@@ -281,9 +262,12 @@ export function AppRoot(): JSX.Element {
             canDelete={state.context.state === "stopped"}
             onDescriptionChange={(stepId: string, description: string) => void controller.setDescription(stepId, description)}
             onDeleteStep={(stepId: string) => void controller.deleteStep(stepId)}
+            onExport={() => void onExport()}
+            onNewRecording={() => { window.open(window.location.href, "_blank"); }}
           />
         </div>
 
+        {!isReviewMode && (
         <aside className="sticky top-16 hidden space-y-4 lg:block">
           <div className="rounded-xl border border-slate-300/70 bg-white p-5 shadow-[0_12px_32px_-28px_rgba(15,23,42,0.55)] dark:border-slate-700/80 dark:bg-[#1a2130]">
             <h3 className="text-sm font-semibold">Workflow</h3>
@@ -304,6 +288,7 @@ export function AppRoot(): JSX.Element {
             </div>
           </div>
         </aside>
+        )}
       </section>
 
       <RecordingToolbar
@@ -314,13 +299,21 @@ export function AppRoot(): JSX.Element {
         onStart={() => void controller.start()}
         onStop={() => void controller.stop()}
         onExport={() => void onExport()}
-        onCapture={() => void controller.captureNow()}
       />
 
       <footer className="border-t border-slate-300/70 bg-white/50 px-4 py-4 text-center text-xs text-slate-500 dark:border-slate-700/80 dark:bg-[#0a0f17]/50 dark:text-slate-400">
         <div className="mx-auto max-w-6xl space-y-1">
-          <div>PSRWeb v2.0.0 • Theme Toggle & UI Redesign</div>
-          <div>Build: May 10, 2026 • {new Date().toLocaleTimeString()}</div>
+          <div>
+            PSRWeb v2.0 ·{" "}
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+            >
+              github.com/jiannystein/psr-web
+            </a>
+          </div>
         </div>
       </footer>
     </main>

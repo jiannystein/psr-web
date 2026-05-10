@@ -34,8 +34,8 @@ console.log("✓ Restored index.html from vite.html");
 // 2. Build
 run("npx vite build");
 
-// 3. Copy built index.html to root
-copyFileSync(join(root, "dist/index.html"), join(root, "index.html"));
+// 3. Copy built HTML to root index.html (Vite preserves source filename → dist/vite.html)
+copyFileSync(join(root, "dist/vite.html"), join(root, "index.html"));
 console.log("✓ Copied dist/index.html → index.html");
 
 // 4. Copy dist/assets/* to root assets/
