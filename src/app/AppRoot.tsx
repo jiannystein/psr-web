@@ -24,9 +24,11 @@ function resolveInitialTheme(): ThemeMode {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+const LOGO_URL = "/psr-web/psr-logo-mark.svg";
+
 function LogoMark(): JSX.Element {
   return (
-    <img src="/psr-logo-mark.svg" alt="" aria-hidden="true" className="h-7 w-7" />
+    <img src={LOGO_URL} alt="" aria-hidden="true" className="h-7 w-7" />
   );
 }
 
@@ -312,6 +314,7 @@ export function AppRoot(): JSX.Element {
         onStart={() => void controller.start()}
         onStop={() => void controller.stop()}
         onExport={() => void onExport()}
+        onCapture={() => void controller.captureNow()}
       />
 
       <footer className="border-t border-slate-300/70 bg-white/50 px-4 py-4 text-center text-xs text-slate-500 dark:border-slate-700/80 dark:bg-[#0a0f17]/50 dark:text-slate-400">

@@ -6,6 +6,15 @@ import path from "path";
 export default defineConfig({
   base: "/psr-web/",
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      // Use vite.html as the canonical entry template so root index.html
+      // can safely be overwritten by the deploy script without breaking builds.
+      input: {
+        index: path.resolve(__dirname, "vite.html"),
+      },
+    },
+  },
   resolve: {
     alias: {
       "@app": path.resolve(__dirname, "./src/app"),
