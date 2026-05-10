@@ -10,6 +10,8 @@ const controller = createCaptureController();
 
 const GITHUB_URL = "https://github.com/jiannystein/psr-web";
 
+declare const __BUILD_TIME__: string;
+
 const LOGO_URL = "/psr-web/psr-logo-mark.svg";
 
 function LogoMark(): JSX.Element {
@@ -313,6 +315,16 @@ export function AppRoot(): JSX.Element {
             >
               github.com/jiannystein/psr-web
             </a>
+          </div>
+          <div className="font-mono text-[10px] opacity-60">
+            Built{" "}
+            {new Date(__BUILD_TIME__).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
           </div>
         </div>
       </footer>

@@ -6,6 +6,9 @@ import path from "path";
 export default defineConfig({
   base: "/psr-web/",
   plugins: [react()],
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   build: {
     rollupOptions: {
       // Use vite.html as the canonical entry template so root index.html
