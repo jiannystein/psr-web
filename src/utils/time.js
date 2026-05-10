@@ -18,3 +18,6 @@ export function formatDate(ms) {
     const date = new Date(ms);
     return date.toLocaleDateString();
 }
+export function nowIso() {
+    return new Date().toISOString();
+}

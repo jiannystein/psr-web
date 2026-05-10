@@ -209,7 +209,7 @@ export function AppRoot(): JSX.Element {
               <p className="mt-4 rounded-lg border border-red-400/50 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">{state.context.lastError}</p>
             )}
             {state.lastInfo && (
-              <p className="mt-3 rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">Resolution: {state.lastInfo.width}x{state.lastInfo.height}</p>
+                <p className="mt-3 rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">{state.lastInfo}</p>
             )}
             <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">Stop sharing will stop recording as well.</p>
 

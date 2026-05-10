@@ -4,6 +4,31 @@
 
 import type { Shape } from "@models/annotations";
 
+export type RecordingState = "idle" | "requesting" | "recording" | "paused" | "stopped";
+
+export type CaptureSourceType = "tab" | "window" | "screen";
+
+export type TriggerType =
+  | "left"
+  | "right"
+  | "double"
+  | "keyboard-enter"
+  | "keyboard-tab"
+  | "periodic"
+  | "window-change";
+
+export interface AppSettings {
+  theme: "dark";
+  periodicCaptureEnabled: boolean;
+  periodicIntervalSec: number;
+  autoWindowChangeDetection: boolean;
+  maxSessionHours: number;
+  preferredImageFormat: "webp" | "jpeg";
+  imageQuality: number;
+  warnStorageThresholdPct: number;
+  dedupeEnabled: boolean;
+  privacyNoticeDismissed: boolean;
+}
 export interface CaptureImage {
   width: number;
   height: number;
@@ -11,11 +36,14 @@ export interface CaptureImage {
   hash: string;
   blobKey: string; // Reference to blob in storage
   byteSize: number; // Size of image in bytes
+    mimeType?: string;
 }
 
 export interface CaptureCursor {
   xPx: number;
   yPx: number;
+    xNorm?: number;
+    yNorm?: number;
 }
 
 export interface CaptureStep {
@@ -42,6 +70,14 @@ export interface CaptureSession {
   endTime?: number;
   state: "idle" | "requesting" | "recording" | "paused" | "stopped";
   stepCount: number;
+    startedAt?: string;
+    endedAt?: string;
+    sourceType?: CaptureSourceType;
+    sourceLabel?: string;
+    totalSteps?: number;
+    settingsSnapshot?: AppSettings;
+    storageBytes?: number;
+    warnings?: string[];
 }
 
 export type ExportQualityPreset = "native" | "1080p" | "720p" | "480p";
@@ -52,5 +88,5 @@ export interface ExportOptions {
   includeTimestamps: boolean;
   inlineImages: boolean;
   printOptimized: boolean;
-  qualityPreset: ExportQualityPreset;
+    qualityPreset?: ExportQualityPreset;
 }

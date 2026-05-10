@@ -3,197 +3,179 @@
  * Manages recording state, step capture, and export
  */
 
-import { CaptureStep, ExportOptions } from "@models/models";
-import { RecordingContext, RecordingEvent } from "@models/events";
+import type { CaptureStep, ExportOptions } from "@models/models";
+import type { RecordingContext } from "@models/events";
+import { requestDisplayStream, stopDisplayStream } from "@core/capture/streamManager";
 
 export interface CaptureControllerState {
-  steps: CaptureStep[];
   context: RecordingContext;
-  captureLongEdge: number | null; // Max long edge for captures in pixels
-  periodicIntervalSec: number; // Interval between periodic captures in seconds
-  sourceResolution: {
-    width: number;
-    height: number;
-  } | null;
-  lastInfo: {
-    width: number;
-    height: number;
-  } | null;
-  quotaWarning: boolean; // Storage quota warning
-  sourceType: "screen" | "window";
+  steps: CaptureStep[];
+  quotaWarning: boolean;
+  periodicIntervalSec: number;
+  captureLongEdge: number | null;
+  sourceType?: string;
+  sourceResolution?: { width: number; height: number };
+  lastInfo?: string;
 }
 
 type StateListener = (state: CaptureControllerState) => void;
 
-export class CaptureController {
-  private state: CaptureControllerState;
-  private listeners: Set<StateListener> = new Set();
-  private timerInterval: number | null = null;
-
-  constructor() {
-    this.state = {
-      steps: [],
-      context: {
-        state: "idle",
-        elapsedMs: 0,
-        stepCount: 0,
-        lastError: null,
-        captureResolution: null,
-      },
-      captureLongEdge: null,
-      periodicIntervalSec: 5,
-      sourceResolution: null,
-      lastInfo: null,
-      quotaWarning: false,
-      sourceType: "screen",
-    };
-  }
-
-  subscribe(listener: StateListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify() {
-    this.listeners.forEach((listener) => listener(this.state));
-  }
-
-  getState(): CaptureControllerState {
-    return this.state;
-  }
-
-  async startRecording(): Promise<void> {
-    // Emit START_REQUESTED event
-    this.dispatchEvent({ type: "START_REQUESTED" });
-
-    // Simulate permission granting
-    this.state.context.state = "recording";
-    this.dispatchEvent({ type: "START_GRANTED" });
-
-    // Start timer
-    this.startTimer();
-    this.notify();
-  }
-
-  pauseRecording(): void {
-    if (this.state.context.state === "recording") {
-      this.state.context.state = "paused";
-      this.stopTimer();
-      this.dispatchEvent({ type: "PAUSE" });
-      this.notify();
-    }
-  }
-
-  resumeRecording(): void {
-    if (this.state.context.state === "paused") {
-      this.state.context.state = "recording";
-      this.startTimer();
-      this.dispatchEvent({ type: "RESUME" });
-      this.notify();
-    }
-  }
-
-  stopRecording(): void {
-    if (this.state.context.state !== "stopped") {
-      this.stopTimer();
-      this.state.context.state = "stopped";
-      this.dispatchEvent({ type: "STOP" });
-      this.notify();
-    }
-  }
-
-  private startTimer(): void {
-    this.timerInterval = window.setInterval(() => {
-      this.state.context.elapsedMs += 100;
-      this.dispatchEvent({
-        type: "TICK",
-        elapsedMs: this.state.context.elapsedMs,
-      });
-      this.notify();
-    }, 100);
-  }
-
-  private stopTimer(): void {
-    if (this.timerInterval !== null) {
-      window.clearInterval(this.timerInterval);
-      this.timerInterval = null;
-    }
-  }
-
-  private dispatchEvent(_event: RecordingEvent): void {
-    // Event dispatch logic - can be extended later
-  }
-
-  addStep(step: CaptureStep): void {
-    this.state.steps.push(step);
-    this.state.context.stepCount = this.state.steps.length;
-    this.dispatchEvent({ type: "STEP_CAPTURED", stepId: step.id });
-    this.notify();
-  }
-
-  setDescription(stepId: string, description: string): void {
-    const step = this.state.steps.find((s) => s.id === stepId);
-    if (step) {
-      step.description = description;
-      this.notify();
-    }
-  }
-
-  deleteStep(_stepId: string): void {
-    this.state.steps = this.state.steps.filter((s) => s.id !== _stepId);
-    this.state.context.stepCount = this.state.steps.length;
-    this.notify();
-  }
-
-  setCaptureLongEdge(edge: number | null): void {
-    this.state.captureLongEdge = edge;
-    this.notify();
-  }
-
-  setPeriodicIntervalSec(sec: number): void {
-    this.state.periodicIntervalSec = sec;
-    this.notify();
-  }
-
-  estimateHtmlExportSize(_options: ExportOptions): number {
-    // Rough estimate: base HTML + steps * avg step size
-    const avgStepSize = 500000; // ~500KB per step (image + metadata)
-    return 10000 + this.state.steps.length * avgStepSize;
-  }
-
-  getPreviewUrl = async (_stepId: string): Promise<string> => {
-    // This would typically create a blob URL for the step image
-    // For now, return a placeholder
-    return "#";
-  };
-
-  start(): void {
-    this.startRecording();
-  }
-
-  stop(): void {
-    this.stopRecording();
-  }
-
-  async exportHtml(_options: ExportOptions): Promise<Blob> {
-    // Generate HTML export
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>PSRWeb Export</title>
-</head>
-<body>
-  <h1>PSRWeb Recording</h1>
-  <p>Steps: ${this.state.steps.length}</p>
-  <p>Duration: ${Math.floor(this.state.context.elapsedMs / 1000)}s</p>
-</body>
-</html>`;
-
-    return new Blob([html], { type: "text/html" });
-  }
+export interface CaptureController {
+  getState: () => CaptureControllerState;
+  start: () => Promise<void>;
+  pause: () => void;
+  resume: () => void;
+  stop: () => Promise<void>;
+  setDescription: (stepId: string, description: string) => Promise<void>;
+  deleteStep: (stepId: string) => Promise<void>;
+  setPeriodicIntervalSec: (seconds: number) => void;
+  setCaptureLongEdge: (value: number | null) => void;
+  getPreviewUrl: (blobKey: string) => Promise<string | null>;
+  exportHtml: (options: ExportOptions) => Promise<Blob>;
+  estimateHtmlExportSize: (options: ExportOptions) => Promise<number>;
+  subscribe: (listener: (state: CaptureControllerState) => void) => () => void;
 }
 
 export function createCaptureController(): CaptureController {
-  return new CaptureController();
+  let context: RecordingContext = {
+    state: "idle",
+    elapsedMs: 0,
+    stepCount: 0
+  };
+
+  let stream: MediaStream | null = null;
+  const listeners = new Set<StateListener>();
+  let tickTimerId: number | null = null;
+
+  function notify(): void {
+    listeners.forEach((l) => l(getState()));
+  }
+
+  function getState(): CaptureControllerState {
+    return {
+      context,
+      steps: [],
+      quotaWarning: false,
+      periodicIntervalSec: 5,
+      captureLongEdge: 1920,
+      lastInfo: context.lastError
+    };
+  }
+
+  const start = async (): Promise<void> => {
+    context = { ...context, state: "requesting" };
+    notify();
+
+    try {
+      const granted = await requestDisplayStream();
+      stream = granted.stream;
+      context = { ...context, state: "recording", stepCount: 0 };
+
+      // Start timer
+      tickTimerId = window.setInterval(() => {
+        context = { ...context, elapsedMs: context.elapsedMs + 1000 };
+        notify();
+      }, 1000);
+
+      // Listen for stream end
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        context = { ...context, state: "stopped" };
+        if (tickTimerId !== null) {
+          window.clearInterval(tickTimerId);
+        }
+        notify();
+      });
+
+      notify();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Display permission denied or screen capture not supported.";
+      context = { ...context, state: "idle", lastError: message };
+      notify();
+    }
+  };
+
+  const pause = (): void => {
+    if (context.state === "recording") {
+      context = { ...context, state: "paused" };
+      if (tickTimerId !== null) {
+        window.clearInterval(tickTimerId);
+      }
+      notify();
+    }
+  };
+
+  const resume = (): void => {
+    if (context.state === "paused") {
+      context = { ...context, state: "recording" };
+      tickTimerId = window.setInterval(() => {
+        context = { ...context, elapsedMs: context.elapsedMs + 1000 };
+        notify();
+      }, 1000);
+      notify();
+    }
+  };
+
+  const stop = async (): Promise<void> => {
+    if (tickTimerId !== null) {
+      window.clearInterval(tickTimerId);
+      tickTimerId = null;
+    }
+    stopDisplayStream(stream);
+    stream = null;
+    context = { ...context, state: "stopped" };
+    notify();
+  };
+
+  const setDescription = async (_stepId: string, _description: string): Promise<void> => {
+    // Placeholder
+  };
+
+  const deleteStep = async (_stepId: string): Promise<void> => {
+    // Placeholder
+  };
+
+  const setPeriodicIntervalSec = (_seconds: number): void => {
+    // Placeholder
+  };
+
+  const setCaptureLongEdge = (_value: number | null): void => {
+    // Placeholder
+  };
+
+  const getPreviewUrl = async (_blobKey: string): Promise<string | null> => {
+    return null;
+  };
+
+  const exportHtml = async (_options: ExportOptions): Promise<Blob> => {
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>PSRWeb Export</title></head>
+<body><h1>PSRWeb Recording</h1><p>No steps captured.</p></body>
+</html>`;
+    return new Blob([html], { type: "text/html" });
+  };
+
+  const estimateHtmlExportSize = async (_options: ExportOptions): Promise<number> => {
+    return 10000;
+  };
+
+  return {
+    getState,
+    start,
+    pause,
+    resume,
+    stop,
+    setDescription,
+    deleteStep,
+    setPeriodicIntervalSec,
+    setCaptureLongEdge,
+    getPreviewUrl,
+    exportHtml,
+    estimateHtmlExportSize,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      listener(getState());
+      return () => listeners.delete(listener);
+    }
+  };
 }

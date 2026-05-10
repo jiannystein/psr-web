@@ -22,3 +22,7 @@ export function formatDate(ms: number): string {
   const date = new Date(ms);
   return date.toLocaleDateString();
 }
+
+  export function nowIso(): string {
+    return new Date().toISOString();
+    }
