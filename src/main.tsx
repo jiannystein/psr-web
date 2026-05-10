@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@styles/tailwind.css";
 import { AppRoot } from "@app/AppRoot";
 
 const rootElement = document.getElementById("root");
