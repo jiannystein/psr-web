@@ -4,6 +4,20 @@
 
 :root {
   color-scheme: light;
+  --bg: oklch(99% 0.002 240);
+  --surface: oklch(100% 0 0);
+  --fg: oklch(18% 0.012 250);
+  --muted: oklch(54% 0.012 250);
+  --border: oklch(92% 0.005 250);
+  --accent: oklch(58% 0.18 255);
+  --accent-hover: oklch(53% 0.18 255);
+  --danger: oklch(50% 0.18 22);
+  --danger-hover: oklch(48% 0.2 22);
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --r: 10px;
+  --r-sm: 6px;
 }
 
 html.dark {
@@ -12,5 +26,14 @@ html.dark {
 
 body {
   margin: 0;
-  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 0.14s;
 }

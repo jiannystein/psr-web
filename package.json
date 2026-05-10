@@ -1,0 +1,31 @@
+{
+  "name": "psr-web",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Problem Step Recorder Web - A web-based tool for capturing and annotating screen recording steps",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dexie": "^4.0.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.7",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.33",
+    "postcss-import": "^16.0.1",
+    "postcss-nested": "^6.0.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8"
+  }
+}
