@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="./public/psr-logo-mark.svg" alt="PSRWeb Logo" width="100" />
+  <img src="./public/psr-logo-mark-692YSYBp.svg" alt="PSRWeb Logo" width="100" />
 
   <h1 align="center">PSRWeb</h1>
 
