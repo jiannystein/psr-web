@@ -80,7 +80,7 @@ export interface CaptureSession {
     warnings?: string[];
 }
 
-export type ExportQualityPreset = "native" | "1080p" | "720p" | "480p";
+export type ExportQualityPreset = "lossless" | "medium" | "low";
 
 export interface ExportOptions {
   format: "html" | "json" | "pdf";

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createCaptureController } from "@features/recording/captureController";
 import { RecordingToolbar } from "@features/recording/RecordingToolbar";
@@ -22,9 +22,23 @@ function LogoMark(): JSX.Element {
 
 export function AppRoot(): JSX.Element {
   const [state, setState] = useState(controller.getState());
-  const [exportQuality, setExportQuality] = useState<ExportQualityPreset>("720p");
+  const [exportQuality, setExportQuality] = useState<ExportQualityPreset>("medium");
   const [estimatedExportSizeBytes, setEstimatedExportSizeBytes] = useState<number | null>(null);
   const [isEstimatingExportSize, setIsEstimatingExportSize] = useState(false);
+  // Accumulates composite (annotated) data URLs per step — updated by StepList, used by both export buttons
+  const compositeUrlMapRef = useRef<Record<string, string>>({});
+
+  // Auto-select capture resolution based on physical screen size on first load
+  useEffect(() => {
+    const dpr = window.devicePixelRatio || 1;
+    const physLong = Math.max(window.screen.width, window.screen.height) * dpr;
+    if (physLong >= 3840) {
+      controller.setCaptureLongEdge(3840);
+    } else {
+      controller.setCaptureLongEdge(1920);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => controller.subscribe(setState), []);
 
@@ -90,15 +104,18 @@ export function AppRoot(): JSX.Element {
     };
   }, [exportQuality, state.steps, state.captureLongEdge]);
 
-  const onExport = async (): Promise<void> => {
-    const blob = await controller.exportHtml({
-      format: "html",
-      includeMetadata: true,
-      includeTimestamps: true,
-      inlineImages: true,
-      printOptimized: true,
-      qualityPreset: exportQuality
-    });
+  const onExport = async (compositeUrlMap: Record<string, string>): Promise<void> => {
+    const blob = await controller.exportHtml(
+      {
+        format: "html",
+        includeMetadata: true,
+        includeTimestamps: true,
+        inlineImages: true,
+        printOptimized: true,
+        qualityPreset: exportQuality
+      },
+      compositeUrlMap
+    );
     const timestamp = new Date().toISOString().replaceAll(":", "-");
     await saveBlob(blob, `psrweb-${exportQuality}-${timestamp}.html`);
   };
@@ -120,8 +137,7 @@ export function AppRoot(): JSX.Element {
       { value: "native", label: "Native stream resolution" },
       { value: "3840", label: "4K max" },
       { value: "2560", label: "1440p max" },
-      { value: "1920", label: "1080p max" },
-      { value: "1280", label: "720p max" }
+      { value: "1920", label: "1080p max" }
     ];
 
     if (screenHeight <= 1080) {
@@ -248,7 +264,7 @@ export function AppRoot(): JSX.Element {
                   <option value="medium">Medium</option>
                   <option value="low">Low</option>
                 </select>
-                <p className="mt-2 text-xs italic text-slate-600 dark:text-slate-300">{qualityPresetDescription(exportQuality)}</p>
+                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">{qualityPresetDescription(exportQuality)}</p>
                 <p className="mt-3 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
                   Estimated HTML size: {isEstimatingExportSize ? "Calculating..." : estimatedExportSizeBytes !== null ? formatByteSize(estimatedExportSizeBytes) : "-"}
                 </p>
@@ -264,7 +280,13 @@ export function AppRoot(): JSX.Element {
             canDelete={state.context.state === "stopped"}
             onDescriptionChange={(stepId: string, description: string) => void controller.setDescription(stepId, description)}
             onDeleteStep={(stepId: string) => void controller.deleteStep(stepId)}
-            onExport={() => void onExport()}
+            onCompositeChange={(stepId, compositeUrl) => {
+              compositeUrlMapRef.current = { ...compositeUrlMapRef.current, [stepId]: compositeUrl };
+            }}
+            onExport={(compositeUrlMap) => {
+              compositeUrlMapRef.current = compositeUrlMap;
+              void onExport(compositeUrlMap);
+            }}
             onNewRecording={() => { window.open(window.location.href, "_blank"); }}
           />
         </div>
@@ -300,13 +322,13 @@ export function AppRoot(): JSX.Element {
         toolbarVisibleWarning={state.sourceType === "screen"}
         onStart={() => void controller.start()}
         onStop={() => void controller.stop()}
-        onExport={() => void onExport()}
+        onExport={() => void onExport(compositeUrlMapRef.current)}
       />
 
       <footer className="border-t border-slate-300/70 bg-white/50 px-4 py-4 text-center text-xs text-slate-500 dark:border-slate-700/80 dark:bg-[#0a0f17]/50 dark:text-slate-400">
         <div className="mx-auto max-w-6xl space-y-1">
           <div>
-            PSRWeb v2.0 ·{" "}
+            PSRWeb v2.1 ·{" "}
             <a
               href={GITHUB_URL}
               target="_blank"

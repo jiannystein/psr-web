@@ -32,16 +32,14 @@ export function formatTriggerLabel(trigger: string): string {
 
 export function qualityPresetDescription(preset: ExportQualityPreset): string {
   switch (preset) {
-    case "native":
-      return "Original quality";
-    case "1080p":
-      return "1080p (best for sharing)";
-    case "720p":
-      return "720p (balanced)";
-    case "480p":
-      return "480p (smallest file)";
+    case "lossless":
+      return "PNG · pixel-perfect, no quality loss · largest file";
+    case "medium":
+      return "JPEG 85% · sharp and clear · recommended";
+    case "low":
+      return "JPEG 65% · smaller file · some softness";
     default:
-      return "Unknown";
+      return "";
   }
 }
 

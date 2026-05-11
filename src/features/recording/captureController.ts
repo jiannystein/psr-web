@@ -37,7 +37,7 @@ export interface CaptureController {
   setPeriodicIntervalSec: (seconds: number) => void;
   setCaptureLongEdge: (value: number | null) => void;
   getPreviewUrl: (blobKey: string) => Promise<string | null>;
-  exportHtml: (options: ExportOptions) => Promise<Blob>;
+  exportHtml: (options: ExportOptions, compositeUrlMap?: Record<string, string>) => Promise<Blob>;
   estimateHtmlExportSize: (options: ExportOptions) => Promise<number>;
   subscribe: (listener: (state: CaptureControllerState) => void) => () => void;
 }
@@ -319,7 +319,7 @@ export function createCaptureController(): CaptureController {
     return blob ? URL.createObjectURL(blob) : null;
   };
 
-  const exportHtml = async (options: ExportOptions): Promise<Blob> => {
+  const exportHtml = async (options: ExportOptions, compositeUrlMap?: Record<string, string>): Promise<Blob> => {
     if (steps.length === 0) {
       const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>PSRWeb Export</title></head>
 <body style="font-family:sans-serif;padding:2rem"><h1>PSRWeb Recording</h1><p>No steps were captured.</p></body></html>`;
@@ -333,7 +333,7 @@ export function createCaptureController(): CaptureController {
       stepCount: steps.length
     };
 
-    return generateHtmlExport(session, steps, new Map(blobs), options);
+    return generateHtmlExport(session, steps, new Map(blobs), options, compositeUrlMap);
   };
 
   const estimateHtmlExportSize = async (options: ExportOptions): Promise<number> => {

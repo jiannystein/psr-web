@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  font-size: 14px;
+}
+
 :root {
   color-scheme: light;
   --bg: oklch(99% 0.002 240);
@@ -14,7 +18,7 @@
   --danger: oklch(50% 0.18 22);
   --danger-hover: oklch(48% 0.2 22);
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
   --r: 10px;
   --r-sm: 6px;

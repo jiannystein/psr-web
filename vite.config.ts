@@ -11,10 +11,8 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      // Use vite.html as the canonical entry template so root index.html
-      // can safely be overwritten by the deploy script without breaking builds.
       input: {
-        index: path.resolve(__dirname, "vite.html"),
+        index: path.resolve(__dirname, "index.html"),
       },
     },
   },

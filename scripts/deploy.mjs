@@ -1,21 +1,14 @@
 /**
- * deploy.mjs — Build and deploy to GitHub Pages (gh-pages branch).
+ * deploy.mjs — Commit source changes and push to main.
+ * GitHub Actions (.github/workflows/deploy.yml) will automatically
+ * build and deploy to GitHub Pages on every push.
  *
  * Usage:  node scripts/deploy.mjs
- *
- * What it does:
- *   1. Restores root index.html from vite.html (the canonical template)
- *   2. Runs `vite build` (which reads vite.html via rollupOptions.input)
- *   3. Copies dist/index.html → root index.html
- *   4. Copies dist/assets/*   → root assets/
- *   5. Stages the changes and creates a deploy commit
- *   6. Pushes to origin gh-pages (with gc.auto=0 to avoid interactive prompts)
- *   7. Restores root index.html back to the template for the next dev session
+ *        (or just: git add . && git commit -m "..." && git push origin main)
  */
 
-import { copyFileSync, readdirSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
-import { join, dirname } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,34 +19,28 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit", cwd: root });
 }
 
-// 1. Restore template so Vite has a clean entry point
-const template = readFileSync(join(root, "vite.html"), "utf8");
-writeFileSync(join(root, "index.html"), template);
-console.log("✓ Restored index.html from vite.html");
-
-// 2. Build
-run("npx vite build");
-
-// 3. Copy built HTML to root index.html (Vite preserves source filename → dist/vite.html)
-copyFileSync(join(root, "dist/vite.html"), join(root, "index.html"));
-console.log("✓ Copied dist/index.html → index.html");
-
-// 4. Copy dist/assets/* to root assets/
-const assetsOut = join(root, "assets");
-mkdirSync(assetsOut, { recursive: true });
-for (const file of readdirSync(join(root, "dist/assets"))) {
-  copyFileSync(join(root, "dist/assets", file), join(assetsOut, file));
+function tryRun(cmd) {
+  try {
+    execSync(cmd, { stdio: "pipe", cwd: root });
+  } catch {
+    // Ignore — file may already be untracked
+  }
 }
-console.log("✓ Copied dist/assets → assets/");
 
-// 5. Stage and commit
-run("git add index.html assets/");
-const timestamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-run(`git -c gc.auto=0 commit -m "deploy: update production build ${timestamp}"`);
+// Remove any previously-committed build artifacts from git tracking
+tryRun("git rm --cached -r --quiet assets/");
+tryRun("git rm --cached --quiet vite.html");
 
-// 6. Push
-run("git -c gc.auto=0 push origin gh-pages");
+// Stage all source changes
+run("git add .");
 
-// 7. Restore template for next dev session
-writeFileSync(join(root, "index.html"), template);
-console.log("✓ Restored index.html to dev template — ready for next session");
+// Commit only if there is something staged
+try {
+  execSync("git diff --cached --quiet", { cwd: root });
+  console.log("Nothing new to commit — source is already up to date.");
+} catch {
+  const timestamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+  run(`git commit -m "source: update ${timestamp}"`);
+  run("git push origin HEAD:main");
+  console.log("\n✔ Source pushed to main — GitHub Actions will build and deploy automatically.");
+}

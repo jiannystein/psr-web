@@ -2,12 +2,12 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type DrawTool = "pointer" | "rect" | "ellipse" | "arrow" | "censor";
+type DrawTool = "pointer" | "rect" | "ellipse" | "arrow" | "censor" | "text";
 type HandleId = "TL" | "TC" | "TR" | "ML" | "MR" | "BL" | "BC" | "BR" | "MOVE";
 
-interface Shape {
+export interface Shape {
   id: string;
-  type: "rect" | "ellipse" | "arrow" | "censor";
+  type: "rect" | "ellipse" | "arrow" | "censor" | "text";
   /** Normalized [0,1] coordinates */
   x1: number;
   y1: number;
@@ -16,11 +16,18 @@ interface Shape {
   color: string;
   thickness: number;
   censorStrength: number;
+  /** Arrow endpoint style (only used when type === "arrow") */
+  arrowStyle?: "line-arrow" | "arrow-arrow" | "line-line" | "arrow-line";
+  /** Text content (only used when type === "text") */
+  text?: string;
+  /** Font size in px at 1080p reference height (only used when type === "text") */
+  fontSize?: number;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const COLORS = ["#4B8BF5", "#EF4444", "#F59E0B", "#10B981", "#ffffff"];
 const HANDLE_R = 6; // hit-test radius in canvas px
+const DEFAULT_FONT_SIZE = 24; // px at 1080p reference height
 
 const HANDLE_CURSORS: Record<HandleId, string> = {
   TL: "nwse-resize", TC: "ns-resize", TR: "nesw-resize",
@@ -31,6 +38,10 @@ const HANDLE_CURSORS: Record<HandleId, string> = {
 
 interface AnnotationCanvasProps {
   imgUrl: string;
+  /** Pre-populated shapes (persisted from previous opens) */
+  shapes?: Shape[];
+  /** Called when modal closes with updated shapes + composite data URL */
+  onShapesChange?: (shapes: Shape[], compositeUrl: string) => void;
 }
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
@@ -49,6 +60,18 @@ function getHandles(shape: Shape, cw: number, ch: number): Array<{ id: HandleId;
       { id: "TL", cx: shape.x1 * cw, cy: shape.y1 * ch },   // start
       { id: "BR", cx: shape.x2 * cw, cy: shape.y2 * ch },   // end
       { id: "MOVE", cx: ((shape.x1 + shape.x2) / 2) * cw, cy: ((shape.y1 + shape.y2) / 2) * ch },
+    ];
+  }
+  if (shape.type === "text") {
+    const n = normBounds(shape);
+    const x1 = n.x1 * cw, y1 = n.y1 * ch;
+    const x2 = n.x2 * cw, y2 = n.y2 * ch;
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    return [
+      { id: "TL", cx: x1, cy: y1 }, { id: "TC", cx: mx, cy: y1 }, { id: "TR", cx: x2, cy: y1 },
+      { id: "ML", cx: x1, cy: my },                                  { id: "MR", cx: x2, cy: my },
+      { id: "BL", cx: x1, cy: y2 }, { id: "BC", cx: mx, cy: y2 }, { id: "BR", cx: x2, cy: y2 },
+      { id: "MOVE", cx: mx, cy: my },
     ];
   }
   const n = normBounds(shape);
@@ -70,6 +93,15 @@ function hitHandle(mx: number, my: number, handles: Array<{ id: HandleId; cx: nu
   return null;
 }
 
+/** Full bounding-box test used for move-detection on draw tools (rect/ellipse interior is grabbable). */
+function hitShapeForDrag(mx: number, my: number, shape: Shape, cw: number, ch: number): boolean {
+  if (shape.type === "arrow") return hitShape(mx, my, shape, cw, ch);
+  const px1 = shape.x1 * cw, py1 = shape.y1 * ch;
+  const px2 = shape.x2 * cw, py2 = shape.y2 * ch;
+  return mx >= Math.min(px1, px2) && mx <= Math.max(px1, px2) &&
+         my >= Math.min(py1, py2) && my <= Math.max(py1, py2);
+}
+
 function hitShape(mx: number, my: number, shape: Shape, cw: number, ch: number): boolean {
   const px1 = shape.x1 * cw, py1 = shape.y1 * ch;
   const px2 = shape.x2 * cw, py2 = shape.y2 * ch;
@@ -78,6 +110,9 @@ function hitShape(mx: number, my: number, shape: Shape, cw: number, ch: number):
   const t = Math.max(shape.thickness + 4, 8);
 
   if (shape.type === "censor") {
+    return mx >= minX && mx <= maxX && my >= minY && my <= maxY;
+  }
+  if (shape.type === "text") {
     return mx >= minX && mx <= maxX && my >= minY && my <= maxY;
   }
   if (shape.type === "rect") {
@@ -143,14 +178,27 @@ function drawShapeOnCtx(
   } else if (shape.type === "arrow") {
     const dx = x2 - x1, dy = y2 - y1;
     const angle = Math.atan2(dy, dx);
-    const hLen = Math.min(28, Math.max(10, Math.hypot(dx, dy) * 0.28)) + shape.thickness;
+    const hLen = Math.min(14, Math.max(6, Math.hypot(dx, dy) * 0.14)) + shape.thickness * 0.5;
+    const style = shape.arrowStyle ?? "line-arrow";
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - hLen * Math.cos(angle - 0.45), y2 - hLen * Math.sin(angle - 0.45));
-    ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - hLen * Math.cos(angle + 0.45), y2 - hLen * Math.sin(angle + 0.45));
-    ctx.stroke();
+    // Arrowhead at end (x2, y2)
+    if (style === "line-arrow" || style === "arrow-arrow") {
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - hLen * Math.cos(angle - 0.45), y2 - hLen * Math.sin(angle - 0.45));
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - hLen * Math.cos(angle + 0.45), y2 - hLen * Math.sin(angle + 0.45));
+      ctx.stroke();
+    }
+    // Arrowhead at start (x1, y1) — points backward
+    if (style === "arrow-line" || style === "arrow-arrow") {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 + hLen * Math.cos(angle - 0.45), y1 + hLen * Math.sin(angle - 0.45));
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 + hLen * Math.cos(angle + 0.45), y1 + hLen * Math.sin(angle + 0.45));
+      ctx.stroke();
+    }
   } else if (shape.type === "censor") {
     const rx = Math.min(x1, x2), ry = Math.min(y1, y2);
     const rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
@@ -174,6 +222,35 @@ function drawShapeOnCtx(
         ctx.fillRect(rx, ry, rw, rh);
       }
     }
+  } else if (shape.type === "text" && shape.text) {
+    const fsPx = (shape.fontSize ?? DEFAULT_FONT_SIZE) * (ch / 1080);
+    ctx.font = `bold ${fsPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.fillStyle = shape.color;
+    ctx.textBaseline = "top";
+    const lineH = fsPx * 1.35;
+    const boxW = Math.abs(x2 - x1);
+    // Word-wrap each explicit paragraph to fit the bounding box width
+    const renderedLines: string[] = [];
+    for (const para of shape.text.split("\n")) {
+      if (para === "") { renderedLines.push(""); continue; }
+      const words = para.split(" ");
+      let cur = "";
+      for (const word of words) {
+        const test = cur ? `${cur} ${word}` : word;
+        if (!cur || ctx.measureText(test).width <= boxW) {
+          cur = test;
+        } else {
+          renderedLines.push(cur);
+          cur = word;
+        }
+      }
+      if (cur) renderedLines.push(cur);
+    }
+    const startX = Math.min(x1, x2);
+    const startY = Math.min(y1, y2);
+    renderedLines.forEach((line, i) => {
+      ctx.fillText(line, startX, startY + i * lineH);
+    });
   }
   ctx.restore();
 }
@@ -251,10 +328,15 @@ function AnnotationModal({
   const [activeTool, setActiveTool] = useState<DrawTool>("pointer");
   const [color, setColor] = useState(COLORS[0]);
   const [thickness, setThickness] = useState(2);
-  const [censorStrength, setCensorStrength] = useState(16);
+  const [censorStrength, setCensorStrength] = useState(2);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [historyLen, setHistoryLen] = useState(0);
   const [shapeCount, setShapeCount] = useState(shapesRef.current.length);
+  const [arrowStyle, setArrowStyle] = useState<Shape["arrowStyle"]>("line-arrow");
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [canvasSize, setCanvasSize] = useState({ w: 960, h: 540 });
+  // Inline text editor: shown when text tool is active and user clicks canvas
+  const [textEditor, setTextEditor] = useState<{ normX: number; normY: number; value: string } | null>(null);
 
   // Mutable interaction refs
   const activeToolRef = useRef<DrawTool>("pointer");
@@ -262,6 +344,10 @@ function AnnotationModal({
   const thicknessRef = useRef(thickness);
   const censorStrengthRef = useRef(censorStrength);
   const selectedIdRef = useRef<string | null>(null);
+  const arrowStyleRef = useRef<Shape["arrowStyle"]>("line-arrow");
+  const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
+  const textEditorRef = useRef<{ normX: number; normY: number; value: string } | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isDown = useRef(false);
   const dragLastNorm = useRef({ x: 0, y: 0 });
@@ -276,6 +362,9 @@ function AnnotationModal({
   useEffect(() => { thicknessRef.current = thickness; }, [thickness]);
   useEffect(() => { censorStrengthRef.current = censorStrength; }, [censorStrength]);
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { arrowStyleRef.current = arrowStyle; }, [arrowStyle]);
+  useEffect(() => { fontSizeRef.current = fontSize; }, [fontSize]);
+  useEffect(() => { textEditorRef.current = textEditor; }, [textEditor]);
 
   // Sync slider values to selected shape when selection changes in pointer mode
   useEffect(() => {
@@ -285,6 +374,12 @@ function AnnotationModal({
     setColor(shape.color); colorRef.current = shape.color;
     setThickness(shape.thickness); thicknessRef.current = shape.thickness;
     setCensorStrength(shape.censorStrength); censorStrengthRef.current = shape.censorStrength;
+    if (shape.type === "arrow" && shape.arrowStyle) {
+      setArrowStyle(shape.arrowStyle); arrowStyleRef.current = shape.arrowStyle;
+    }
+    if (shape.type === "text" && shape.fontSize !== undefined) {
+      setFontSize(shape.fontSize); fontSizeRef.current = shape.fontSize;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -302,8 +397,8 @@ function AnnotationModal({
       const sel = shapesRef.current.find((s) => s.id === selId);
       if (sel) drawHandles(ctx, sel, canvas.width, canvas.height, selId);
     }
-    // Draw in-progress shape
-    if (isDown.current && activeToolRef.current !== "pointer") {
+    // Draw in-progress shape (only when actively drawing a NEW shape, not during move/resize)
+    if (isDown.current && activeToolRef.current !== "pointer" && dragShapeId.current === null) {
       drawShapeOnCtx(ctx, canvas.width, canvas.height, {
         id: "__preview",
         type: activeToolRef.current as Exclude<DrawTool, "pointer">,
@@ -312,6 +407,7 @@ function AnnotationModal({
         color: colorRef.current,
         thickness: thicknessRef.current,
         censorStrength: censorStrengthRef.current,
+        arrowStyle: arrowStyleRef.current,
       }, imgRef.current);
     }
   }, [shapesRef]);
@@ -324,6 +420,7 @@ function AnnotationModal({
     const sync = (): void => {
       canvas.width = wrap.clientWidth;
       canvas.height = wrap.clientHeight;
+      setCanvasSize({ w: wrap.clientWidth, h: wrap.clientHeight });
       redraw();
     };
     sync();
@@ -340,12 +437,56 @@ function AnnotationModal({
     if (img.complete) { imgRef.current = img; }
   }, [imgUrl, redraw]);
 
-  // Escape closes modal
+  // Escape closes modal (but not if text editor is open — textarea handles it)
   useEffect((): (() => void) => {
-    const handler = (e: KeyboardEvent): void => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !textEditorRef.current) onClose();
+    };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
+
+  /** Commit the inline text editor as a permanent text shape. */
+  const commitText = useCallback((editor: { normX: number; normY: number; value: string }): void => {
+    const text = editor.value.trim();
+    if (!text) { setTextEditor(null); return; }
+    const canvas = canvasRef.current;
+    const cw = canvas?.width ?? 1920, ch = canvas?.height ?? 1080;
+    const fsPx = fontSizeRef.current * (ch / 1080);
+    const lineH = fsPx * 1.35;
+    const lines = text.split("\n");
+    // Measure width using canvas context for accuracy
+    let maxWidthPx = lines.reduce((m, l) => Math.max(m, l.length), 0) * fsPx * 0.6;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.font = `bold ${fsPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        maxWidthPx = Math.max(...lines.map((l) => ctx.measureText(l).width));
+      }
+    }
+    const totalHeightPx = lines.length * lineH;
+    historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+    const newShape: Shape = {
+      id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
+      type: "text",
+      x1: editor.normX,
+      y1: editor.normY,
+      x2: editor.normX + maxWidthPx / cw,
+      y2: editor.normY + totalHeightPx / ch,
+      color: colorRef.current,
+      thickness: thicknessRef.current,
+      censorStrength: 2,
+      text,
+      fontSize: fontSizeRef.current,
+    };
+    shapesRef.current = [...shapesRef.current, newShape];
+    setSelectedId(newShape.id);
+    selectedIdRef.current = newShape.id;
+    setShapeCount(shapesRef.current.length);
+    setHistoryLen(historyRef.current.length);
+    setTextEditor(null);
+    redraw();
+  }, [shapesRef, redraw]);
 
   const getNormPos = useCallback((e: React.MouseEvent): { x: number; y: number } => {
     const canvas = canvasRef.current;
@@ -422,7 +563,40 @@ function AnnotationModal({
       }
       redraw();
     } else {
-      // Drawing mode — start new shape
+      // Drawing mode — but first check if user is clicking on selected shape (move/resize)
+      const selId = selectedIdRef.current;
+      if (selId) {
+        const selShape = shapesRef.current.find((s) => s.id === selId);
+        if (selShape) {
+          const handles = getHandles(selShape, cw, ch);
+          const handleHit = hitHandle(cpx.x, cpx.y, handles);
+          if (handleHit) {
+            historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+            setHistoryLen(historyRef.current.length);
+            isDown.current = true;
+            activeHandle.current = handleHit;
+            dragShapeId.current = selId;
+            dragLastNorm.current = normPos;
+            return;
+          }
+          if (hitShapeForDrag(cpx.x, cpx.y, selShape, cw, ch)) {
+            historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+            setHistoryLen(historyRef.current.length);
+            isDown.current = true;
+            activeHandle.current = "MOVE";
+            dragShapeId.current = selId;
+            dragLastNorm.current = normPos;
+            return;
+          }
+        }
+      }
+      // Start a new shape (or open text editor)
+      if (tool === "text") {
+        setTextEditor({ normX: normPos.x, normY: normPos.y, value: "" });
+        setSelectedId(null);
+        selectedIdRef.current = null;
+        return;
+      }
       isDown.current = true;
       drawStartNorm.current = normPos;
       drawCurrentNorm.current = normPos;
@@ -438,10 +612,11 @@ function AnnotationModal({
     const normPos = getNormPos(e);
     const cpx = getCanvasPx(e);
 
-    // Update cursor when not dragging
-    if (!isDown.current && activeToolRef.current === "pointer") {
+    // Update cursor based on hover state — works for all tools
+    if (!isDown.current) {
+      const isPointerTool = activeToolRef.current === "pointer";
       const selId = selectedIdRef.current;
-      let cur = "default";
+      let cur = isPointerTool ? "default" : "crosshair";
       if (selId) {
         const selShape = shapesRef.current.find((s) => s.id === selId);
         if (selShape) {
@@ -449,60 +624,86 @@ function AnnotationModal({
           const hh = hitHandle(cpx.x, cpx.y, handles);
           if (hh) {
             cur = selShape.type === "arrow" && (hh === "TL" || hh === "BR")
-              ? "crosshair"
+              ? (isPointerTool ? "crosshair" : "crosshair")
               : HANDLE_CURSORS[hh];
-          } else if (hitShape(cpx.x, cpx.y, selShape, cw, ch)) {
+          } else if (hitShapeForDrag(cpx.x, cpx.y, selShape, cw, ch)) {
             cur = "move";
           }
         }
       }
-      if (cur === "default" && shapesRef.current.some((s) => hitShape(cpx.x, cpx.y, s, cw, ch))) {
-        cur = "pointer";
+      if ((isPointerTool ? cur === "default" : cur === "crosshair") && shapesRef.current.some((s) => hitShape(cpx.x, cpx.y, s, cw, ch))) {
+        cur = isPointerTool ? "pointer" : "move";
       }
       canvas.style.cursor = cur;
     }
 
     if (!isDown.current) return;
 
-    if (activeToolRef.current === "pointer" && dragShapeId.current && activeHandle.current) {
+    if (dragShapeId.current && activeHandle.current) {
       const dnx = normPos.x - dragLastNorm.current.x;
       const dny = normPos.y - dragLastNorm.current.y;
       dragLastNorm.current = normPos;
-      shapesRef.current = shapesRef.current.map((s) =>
-        s.id === dragShapeId.current
-          ? applyHandle(s, activeHandle.current!, dnx, dny)
-          : s
-      );
+      const handle = activeHandle.current;
+      shapesRef.current = shapesRef.current.map((s) => {
+        if (s.id !== dragShapeId.current) return s;
+        return applyHandle(s, handle, dnx, dny);
+      });
       redraw();
     } else {
-      drawCurrentNorm.current = normPos;
+      // Apply shift-constrain during drawing
+      let constrainedPos = normPos;
+      if (e.shiftKey) {
+        const sx = drawStartNorm.current.x, sy = drawStartNorm.current.y;
+        const dx = normPos.x - sx, dy = normPos.y - sy;
+        if (activeToolRef.current === "arrow") {
+          // Snap to nearest 45° angle (in pixel space so diagonals are true 45°)
+          const dxPx = dx * cw, dyPx = dy * ch;
+          const angle = Math.atan2(dyPx, dxPx);
+          const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const dist = Math.hypot(dxPx, dyPx);
+          constrainedPos = {
+            x: sx + (dist * Math.cos(snapAngle)) / cw,
+            y: sy + (dist * Math.sin(snapAngle)) / ch,
+          };
+        } else {
+          // Square/circle constraint: equalize pixel extents so the shape is visually square
+          const dxPx = dx * cw, dyPx = dy * ch;
+          const dimPx = Math.min(Math.abs(dxPx), Math.abs(dyPx));
+          constrainedPos = {
+            x: sx + Math.sign(dx) * (dimPx / cw),
+            y: sy + Math.sign(dy) * (dimPx / ch),
+          };
+        }
+      }
+      drawCurrentNorm.current = constrainedPos;
       redraw();
     }
   }, [getNormPos, getCanvasPx, shapesRef, redraw]);
 
-  const onMouseUp = useCallback((e: React.MouseEvent): void => {
+  const onMouseUp = useCallback((_e: React.MouseEvent): void => {
     if (!isDown.current) return;
     const tool = activeToolRef.current;
-    const normPos = getNormPos(e);
 
-    if (tool === "pointer") {
-      // Move/resize is committed incrementally; just clean up
+    if (tool === "pointer" || dragShapeId.current !== null) {
+      // Move/resize committed; clean up (also handles move/resize initiated from draw tools)
       dragShapeId.current = null;
       activeHandle.current = null;
     } else {
-      // Commit new drawn shape
-      const dx = normPos.x - drawStartNorm.current.x;
-      const dy = normPos.y - drawStartNorm.current.y;
+      // Commit new drawn shape — drawCurrentNorm already has shift-constraint applied from onMouseMove
+      const endPos = drawCurrentNorm.current;
+      const dx = endPos.x - drawStartNorm.current.x;
+      const dy = endPos.y - drawStartNorm.current.y;
       if (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005) {
         historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
         const newShape: Shape = {
           id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
           type: tool as Exclude<DrawTool, "pointer">,
           x1: drawStartNorm.current.x, y1: drawStartNorm.current.y,
-          x2: normPos.x, y2: normPos.y,
+          x2: endPos.x, y2: endPos.y,
           color: colorRef.current,
           thickness: thicknessRef.current,
           censorStrength: censorStrengthRef.current,
+          arrowStyle: tool === "arrow" ? arrowStyleRef.current : undefined,
         };
         shapesRef.current = [...shapesRef.current, newShape];
         setSelectedId(newShape.id);
@@ -513,7 +714,7 @@ function AnnotationModal({
     }
     isDown.current = false;
     redraw();
-  }, [getNormPos, shapesRef, redraw]);
+  }, [shapesRef, redraw]);
 
   const undo = (): void => {
     const prev = historyRef.current.pop();
@@ -543,6 +744,8 @@ function AnnotationModal({
   const effectiveTool = activeTool === "pointer" ? (selectedShape?.type ?? null) : activeTool;
   const showColorThick = effectiveTool === "rect" || effectiveTool === "ellipse" || effectiveTool === "arrow";
   const showCensor = effectiveTool === "censor";
+  const showArrowStyle = effectiveTool === "arrow";
+  const showTextOpts = effectiveTool === "text";
 
   const SEP = (
     <div className="w-px h-5 flex-shrink-0 mx-1" style={{ background: "rgba(255,255,255,0.15)" }} />
@@ -605,11 +808,12 @@ function AnnotationModal({
           />
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 w-full h-full"
-            style={{ cursor: activeTool !== "pointer" ? "crosshair" : "default" }}
+            className="absolute inset-0 w-full h-full select-none"
+            style={{ cursor: activeTool === "text" ? "text" : activeTool !== "pointer" ? "crosshair" : "default" }}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onContextMenu={(e) => e.preventDefault()}
             onMouseLeave={(): void => {
               if (isDown.current && activeToolRef.current !== "pointer") {
                 isDown.current = false;
@@ -617,6 +821,58 @@ function AnnotationModal({
               }
             }}
           />
+
+          {/* Inline text editor overlay */}
+          {textEditor !== null && (
+            <textarea
+              ref={textAreaRef}
+              autoFocus
+              rows={1}
+              value={textEditor.value}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTextEditor((prev) => prev ? { ...prev, value: val } : null);
+                // Auto-grow height
+                e.target.style.height = "auto";
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
+              onBlur={() => {
+                const ed = textEditorRef.current;
+                if (ed) commitText(ed);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setTextEditor(null);
+                } else if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const ed = textEditorRef.current;
+                  if (ed) commitText(ed);
+                }
+              }}
+              style={{
+                position: "absolute",
+                left: `${textEditor.normX * 100}%`,
+                top: `${textEditor.normY * 100}%`,
+                minWidth: "80px",
+                width: "auto",
+                background: "transparent",
+                border: "1px dashed rgba(75,139,245,0.75)",
+                borderRadius: "2px",
+                outline: "none",
+                color: color,
+                fontSize: `${fontSize * (canvasSize.h / 1080)}px`,
+                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                fontWeight: "bold",
+                lineHeight: "1.35",
+                resize: "none",
+                padding: "1px 3px",
+                overflow: "hidden",
+                zIndex: 10,
+                caretColor: color,
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -648,7 +904,49 @@ function AnnotationModal({
           <ToolBtn active={activeTool === "censor"} title="Mosaic / Censor" onClick={() => { setActiveTool("censor"); activeToolRef.current = "censor"; }}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="8" rx="1" fill="currentColor" opacity=".25" /><path d="M2 4h12M2 7h12M2 10h12M5 4v8M8 4v8M11 4v8" stroke="currentColor" strokeWidth="1" /></svg>
           </ToolBtn>
+          <ToolBtn active={activeTool === "text"} title="Text" onClick={() => { setActiveTool("text"); activeToolRef.current = "text"; }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2.5H9.5V13h-3V5.5H2V3z" /></svg>
+          </ToolBtn>
         </div>
+
+        {/* Text options: color + font size */}
+        {showTextOpts && (
+          <>
+            {SEP}
+            <div className="flex items-center gap-1.5">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={c}
+                  onClick={() => { setColor(c); colorRef.current = c; updateSelectedShape({ color: c }); }}
+                  className="w-4 h-4 rounded-full cursor-pointer border-0 transition-transform hover:scale-125 flex-shrink-0"
+                  style={{
+                    background: c,
+                    outline: color === c ? "2px solid rgba(255,255,255,0.9)" : "2px solid transparent",
+                    outlineOffset: "1.5px",
+                    boxShadow: c === "#ffffff" ? "inset 0 0 0 1px rgba(0,0,0,0.3)" : undefined,
+                  }}
+                />
+              ))}
+            </div>
+            {SEP}
+            <div className="flex items-center gap-2">
+              <span className="text-white/35 font-mono whitespace-nowrap" style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.07em" }}>Size</span>
+              <input
+                type="range" min={12} max={72} step={1} value={fontSize}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setFontSize(v); fontSizeRef.current = v;
+                  updateSelectedShape({ fontSize: v });
+                }}
+                className="w-24 cursor-pointer"
+                style={{ accentColor: "#4B8BF5" }}
+              />
+              <span className="text-white/35 font-mono w-8 text-right" style={{ fontSize: "10px" }}>{fontSize}px</span>
+            </div>
+          </>
+        )}
 
         {/* Color swatches + line width — for rect / ellipse / arrow (or selected shape of those types) */}
         {showColorThick && (
@@ -706,9 +1004,9 @@ function AnnotationModal({
               <span className="text-white/35 font-mono whitespace-nowrap" style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.07em" }}>Mosaic</span>
               <input
                 type="range"
-                min={4}
+                min={2}
                 max={32}
-                step={2}
+                step={1}
                 value={censorStrength}
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10);
@@ -720,6 +1018,42 @@ function AnnotationModal({
                 style={{ accentColor: "#4B8BF5" }}
               />
               <span className="text-white/35 font-mono w-8 text-right" style={{ fontSize: "10px" }}>{censorStrength}px</span>
+            </div>
+          </>
+        )}
+
+        {/* Arrow style picker — visible when arrow tool is active or an arrow shape is selected */}
+        {showArrowStyle && (
+          <>
+            {SEP}
+            <div className="flex items-center gap-1" style={{ background: "rgba(255,255,255,0.06)", borderRadius: "8px", padding: "4px" }}>
+              {(
+                [
+                  { value: "line-arrow", title: "Line → Arrow", svg: <svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="3" y1="7" x2="22" y2="7" /><polyline points="16,3 22,7 16,11" /></svg> },
+                  { value: "arrow-arrow", title: "Arrow ↔ Arrow", svg: <svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="3" y1="7" x2="25" y2="7" /><polyline points="9,3 3,7 9,11" /><polyline points="19,3 25,7 19,11" /></svg> },
+                  { value: "line-line", title: "Line — Line (no arrows)", svg: <svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="3" y1="7" x2="25" y2="7" /></svg> },
+                  { value: "arrow-line", title: "Arrow → Line", svg: <svg width="28" height="14" viewBox="0 0 28 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="6" y1="7" x2="25" y2="7" /><polyline points="12,3 6,7 12,11" /></svg> },
+                ] as { value: Shape["arrowStyle"]; title: string; svg: React.ReactNode }[]
+              ).map(({ value, title, svg }) => (
+                <button
+                  key={value}
+                  type="button"
+                  title={title}
+                  onClick={() => {
+                    setArrowStyle(value);
+                    arrowStyleRef.current = value;
+                    updateSelectedShape({ arrowStyle: value });
+                    redraw();
+                  }}
+                  className="flex items-center justify-center h-7 px-1 rounded border-none cursor-pointer transition-all duration-100"
+                  style={{
+                    background: arrowStyle === value ? "rgba(75,139,245,0.22)" : "transparent",
+                    color: arrowStyle === value ? "rgba(147,197,253,1)" : "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  {svg}
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -746,10 +1080,53 @@ function AnnotationModal({
 }
 
 // ── Card thumbnail + entry point ───────────────────────────────────────────────
-export function AnnotationCanvas({ imgUrl }: AnnotationCanvasProps): JSX.Element {
-  const shapesRef = useRef<Shape[]>([]);
-  const [shapeCount, setShapeCount] = useState(0);
+export function AnnotationCanvas({ imgUrl, shapes: initialShapes, onShapesChange }: AnnotationCanvasProps): JSX.Element {
+  const shapesRef = useRef<Shape[]>(initialShapes ?? []);
+  const [shapeCount, setShapeCount] = useState(initialShapes?.length ?? 0);
   const [isOpen, setIsOpen] = useState(false);
+  const [compositeUrl, setCompositeUrl] = useState<string | null>(null);
+  // Pre-loaded image to avoid race condition when building composite
+  const cachedImgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => { cachedImgRef.current = img; };
+    img.src = imgUrl;
+    if (img.complete && img.naturalWidth > 0) { cachedImgRef.current = img; }
+  }, [imgUrl]);
+
+  // Generate composite thumbnail (image + annotations)
+  const buildComposite = useCallback((shapes: Shape[]): void => {
+    if (shapes.length === 0) {
+      setCompositeUrl(null);
+      onShapesChange?.(shapes, "");
+      return;
+    }
+    const doRender = (img: HTMLImageElement): void => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || 1920;
+      c.height = img.naturalHeight || 1080;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      for (const shape of shapes) {
+        drawShapeOnCtx(ctx, c.width, c.height, shape, img);
+      }
+      const url = c.toDataURL("image/jpeg", 0.92);
+      setCompositeUrl(url);
+      onShapesChange?.(shapes, url);
+    };
+    // Use pre-loaded cached image if available; fallback handles already-cached blob URLs
+    if (cachedImgRef.current) {
+      doRender(cachedImgRef.current);
+    } else {
+      const img = new Image();
+      img.src = imgUrl;
+      const onReady = (): void => { cachedImgRef.current = img; doRender(img); };
+      if (img.complete && img.naturalWidth > 0) { onReady(); }
+      else { img.onload = onReady; }
+    }
+  }, [imgUrl, onShapesChange]);
 
   return (
     <>
@@ -759,7 +1136,7 @@ export function AnnotationCanvas({ imgUrl }: AnnotationCanvasProps): JSX.Element
         style={{ aspectRatio: "16/9", background: "var(--bg)", overflow: "hidden" }}
       >
         <img
-          src={imgUrl}
+          src={compositeUrl ?? imgUrl}
           alt="Screenshot"
           className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
         />
@@ -804,8 +1181,10 @@ export function AnnotationCanvas({ imgUrl }: AnnotationCanvasProps): JSX.Element
           imgUrl={imgUrl}
           shapesRef={shapesRef}
           onClose={() => {
-            setShapeCount(shapesRef.current.length);
+            const count = shapesRef.current.length;
+            setShapeCount(count);
             setIsOpen(false);
+            buildComposite(shapesRef.current);
           }}
         />
       )}

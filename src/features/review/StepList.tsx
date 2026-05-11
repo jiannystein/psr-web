@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CaptureStep } from "@models/models";
 import { formatByteSize, formatTimestampInfo, formatTriggerLabel } from "@utils/presentation";
@@ -12,7 +12,8 @@ interface StepListProps {
   canDelete: boolean;
   onDescriptionChange: (stepId: string, description: string) => void;
   onDeleteStep: (stepId: string) => void;
-  onExport?: () => void;
+  onExport?: (compositeUrlMap: Record<string, string>) => void;
+  onCompositeChange?: (stepId: string, compositeUrl: string) => void;
   onNewRecording?: () => void;
 }
 
@@ -20,6 +21,8 @@ export function StepList(props: StepListProps): JSX.Element {
   const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSteps, setSelectedSteps] = useState<Set<string>>(new Set());
+  // Stores composite (annotated) data URLs for each step — used by export
+  const compositeUrlMapRef = useRef<Record<string, string>>({});
 
   // Reset selection mode when state changes away from stopped
   useEffect(() => {
@@ -59,6 +62,14 @@ export function StepList(props: StepListProps): JSX.Element {
 
   const deleteSelected = (): void => {
     selectedSteps.forEach((stepId) => props.onDeleteStep(stepId));
+    setSelectedSteps(new Set());
+    cancelSelectionMode();
+  };
+
+  const keepSelected = (): void => {
+    props.steps
+      .filter((s) => !selectedSteps.has(s.id))
+      .forEach((s) => props.onDeleteStep(s.id));
     setSelectedSteps(new Set());
     cancelSelectionMode();
   };
@@ -122,19 +133,6 @@ export function StepList(props: StepListProps): JSX.Element {
       totalSize,
     };
   }, [props.steps]);
-
-  const badgeLabel = useMemo(() => {
-    if (props.sessionState === "recording") {
-      return "Recording";
-    }
-    if (props.sessionState === "paused") {
-      return "Paused";
-    }
-    if (props.sessionState === "stopped") {
-      return `Session ended · ${sessionStats.duration}`;
-    }
-    return "Ready";
-  }, [props.sessionState, sessionStats.duration]);
 
   // ── Idle / Requesting: no steps yet ──
   if (props.steps.length === 0 && (props.sessionState === "idle" || props.sessionState === "requesting")) {
@@ -260,7 +258,7 @@ export function StepList(props: StepListProps): JSX.Element {
               </Button>
             )}
             {props.onExport && (
-              <Button variant="primary" size="md" onClick={props.onExport}>
+              <Button variant="primary" size="md" onClick={() => props.onExport!(compositeUrlMapRef.current)}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <path d="M8 3v8M5 8l3 3 3-3" /><path d="M3 13h10" />
                 </svg>
@@ -351,7 +349,16 @@ export function StepList(props: StepListProps): JSX.Element {
 
               {/* Screenshot with annotation canvas */}
               {previewMap[step.id] ? (
-                <AnnotationCanvas imgUrl={previewMap[step.id]} />
+                <AnnotationCanvas
+                  imgUrl={previewMap[step.id]}
+                  onShapesChange={(_, compositeUrl) => {
+                    compositeUrlMapRef.current = {
+                      ...compositeUrlMapRef.current,
+                      [step.id]: compositeUrl,
+                    };
+                    props.onCompositeChange?.(step.id, compositeUrl);
+                  }}
+                />
               ) : (
                 <div
                   className="w-full border-b border-[var(--border)] flex items-center justify-center text-[var(--muted)]"
@@ -402,6 +409,14 @@ export function StepList(props: StepListProps): JSX.Element {
             className="h-8 px-4 rounded text-sm font-medium bg-[oklch(26%_0.012_250)] text-[oklch(72%_0.008_250)] border-none cursor-pointer hover:bg-[oklch(30%_0.012_250)] transition-colors"
           >
             Cancel
+          </button>
+          <button
+            type="button"
+            disabled={selectedSteps.size === 0}
+            onClick={keepSelected}
+            className="h-8 px-4 rounded text-sm font-medium bg-[oklch(48%_0.15_255)] text-white border-none cursor-pointer hover:bg-[oklch(43%_0.15_255)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Keep selected, delete rest
           </button>
           <button
             type="button"

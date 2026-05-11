@@ -9,8 +9,8 @@ export function extractFrame(video: HTMLVideoElement, maxLongEdge?: number): Fra
   let height = video.videoHeight;
 
   if (!width || !height) {
-    width = 1280;
-    height = 720;
+    width = 1920;
+    height = 1080;
   }
 
   if (maxLongEdge) {
