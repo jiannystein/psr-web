@@ -12,7 +12,7 @@ const GITHUB_URL = "https://github.com/jiannystein/psr-web";
 
 declare const __BUILD_TIME__: string;
 
-const LOGO_URL = "/psr-web/psr-logo-mark.svg";
+const LOGO_URL = new URL("../assets/psr-logo-mark.svg", import.meta.url).href;
 
 function LogoMark(): JSX.Element {
   return (

@@ -1,11 +1,6 @@
 <div align="center">
-  <div style="width: 100%; max-width: 920px; height: 220px; overflow: hidden; border-radius: 12px;">
-    <img src="./public/banner.png" alt="PSRWeb Banner" width="100%" height="100%" style="object-fit: cover;" />
-  </div>
 
-  <br />
-
-  <img src="./psr-logo-mark.svg" alt="PSRWeb Logo" width="100" />
+  <img src="./public/psr-logo-mark.svg" alt="PSRWeb Logo" width="100" />
 
   <h1 align="center">PSRWeb</h1>
 
