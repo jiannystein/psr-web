@@ -68,6 +68,9 @@ export function createCaptureController(): CaptureController {
   // --- Input triggers ---
   let inputSub: InputTriggerSubscription | null = null;
 
+  // --- Generation counter to cancel in-flight captures when stop is called ---
+  let captureGeneration = 0;
+
   // --- Helpers ---
   function notify(): void {
     const snapshot = getState();
@@ -92,6 +95,9 @@ export function createCaptureController(): CaptureController {
       return;
     }
 
+    // Snapshot the generation at the start so we can bail if stop() fires during the async work
+    const gen = captureGeneration;
+
     let frame;
     try {
       frame = extractFrame(videoEl, captureLongEdge ?? undefined);
@@ -107,7 +113,8 @@ export function createCaptureController(): CaptureController {
       );
     });
 
-    if (!blob) {
+    // If stop() was called while we were awaiting toBlob, discard this capture
+    if (captureGeneration !== gen || !blob) {
       return;
     }
 
@@ -253,6 +260,9 @@ export function createCaptureController(): CaptureController {
   };
 
   const stop = async (): Promise<void> => {
+    // Immediately invalidate any in-flight captures (e.g. triggered by the Stop button click itself)
+    captureGeneration++;
+
     // Clean up timers
     if (tickTimerId !== null) {
       window.clearInterval(tickTimerId);

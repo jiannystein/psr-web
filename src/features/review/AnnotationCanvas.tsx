@@ -335,8 +335,8 @@ function AnnotationModal({
   const [arrowStyle, setArrowStyle] = useState<Shape["arrowStyle"]>("line-arrow");
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [canvasSize, setCanvasSize] = useState({ w: 960, h: 540 });
-  // Inline text editor: shown when text tool is active and user clicks canvas
-  const [textEditor, setTextEditor] = useState<{ normX: number; normY: number; value: string } | null>(null);
+  // Inline text editor: shown when text tool draws a box or re-edits existing text
+  const [textEditor, setTextEditor] = useState<{ editingId: string; value: string } | null>(null);
 
   // Mutable interaction refs
   const activeToolRef = useRef<DrawTool>("pointer");
@@ -346,8 +346,10 @@ function AnnotationModal({
   const selectedIdRef = useRef<string | null>(null);
   const arrowStyleRef = useRef<Shape["arrowStyle"]>("line-arrow");
   const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
-  const textEditorRef = useRef<{ normX: number; normY: number; value: string } | null>(null);
+  const textEditorRef = useRef<{ editingId: string; value: string } | null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Prevents textarea blur from committing text while a handle drag is in progress
+  const suppressBlurRef = useRef(false);
 
   const isDown = useRef(false);
   const dragLastNorm = useRef({ x: 0, y: 0 });
@@ -399,16 +401,31 @@ function AnnotationModal({
     }
     // Draw in-progress shape (only when actively drawing a NEW shape, not during move/resize)
     if (isDown.current && activeToolRef.current !== "pointer" && dragShapeId.current === null) {
-      drawShapeOnCtx(ctx, canvas.width, canvas.height, {
-        id: "__preview",
-        type: activeToolRef.current as Exclude<DrawTool, "pointer">,
-        x1: drawStartNorm.current.x, y1: drawStartNorm.current.y,
-        x2: drawCurrentNorm.current.x, y2: drawCurrentNorm.current.y,
-        color: colorRef.current,
-        thickness: thicknessRef.current,
-        censorStrength: censorStrengthRef.current,
-        arrowStyle: arrowStyleRef.current,
-      }, imgRef.current);
+      if (activeToolRef.current === "text") {
+        // Text box preview: dashed rect
+        const x1 = drawStartNorm.current.x * canvas.width;
+        const y1 = drawStartNorm.current.y * canvas.height;
+        const x2 = drawCurrentNorm.current.x * canvas.width;
+        const y2 = drawCurrentNorm.current.y * canvas.height;
+        ctx.save();
+        ctx.strokeStyle = colorRef.current;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        ctx.setLineDash([]);
+        ctx.restore();
+      } else {
+        drawShapeOnCtx(ctx, canvas.width, canvas.height, {
+          id: "__preview",
+          type: activeToolRef.current as Exclude<DrawTool, "pointer">,
+          x1: drawStartNorm.current.x, y1: drawStartNorm.current.y,
+          x2: drawCurrentNorm.current.x, y2: drawCurrentNorm.current.y,
+          color: colorRef.current,
+          thickness: thicknessRef.current,
+          censorStrength: censorStrengthRef.current,
+          arrowStyle: arrowStyleRef.current,
+        }, imgRef.current);
+      }
     }
   }, [shapesRef]);
 
@@ -446,70 +463,32 @@ function AnnotationModal({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  /** Commit the inline text editor as a permanent text shape. */
-  const commitText = useCallback((editor: { normX: number; normY: number; value: string }): void => {
-    const text = editor.value.trim();
-    if (!text) { setTextEditor(null); return; }
-    const canvas = canvasRef.current;
-    const cw = canvas?.width ?? 1920, ch = canvas?.height ?? 1080;
-    const fsPx = fontSizeRef.current * (ch / 1080);
-    const lineH = fsPx * 1.35;
-    const lines = text.split("\n");
-    // Measure width using canvas context for accuracy
-    let maxWidthPx = lines.reduce((m, l) => Math.max(m, l.length), 0) * fsPx * 0.6;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.font = `bold ${fsPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-        maxWidthPx = Math.max(...lines.map((l) => ctx.measureText(l).width));
-      }
-    }
-    const totalHeightPx = lines.length * lineH;
-    historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
-    
-    const selId = selectedIdRef.current;
-    const existingShape = selId ? shapesRef.current.find((s) => s.id === selId && s.type === "text") : null;
-    
-    if (existingShape) {
-      // Update existing text shape
-      shapesRef.current = shapesRef.current.map((s) => 
-        s.id === selId 
-          ? {
-              ...s,
-              x1: editor.normX,
-              y1: editor.normY,
-              x2: editor.normX + maxWidthPx / cw,
-              y2: editor.normY + totalHeightPx / ch,
-              text,
-              fontSize: fontSizeRef.current,
-              color: colorRef.current,
-              thickness: thicknessRef.current,
-            }
-          : s
-      );
-    } else {
-      // Create new text shape
-      const newShape: Shape = {
-        id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
-        type: "text",
-        x1: editor.normX,
-        y1: editor.normY,
-        x2: editor.normX + maxWidthPx / cw,
-        y2: editor.normY + totalHeightPx / ch,
-        color: colorRef.current,
-        thickness: thicknessRef.current,
-        censorStrength: 2,
-        text,
-        fontSize: fontSizeRef.current,
-      };
-      shapesRef.current = [...shapesRef.current, newShape];
-      setSelectedId(newShape.id);
-      selectedIdRef.current = newShape.id;
-    }
-    
-    setShapeCount(shapesRef.current.length);
-    setHistoryLen(historyRef.current.length);
+  /** Commit the inline text editor — updates the shape text or removes it if empty. */
+  const commitText = useCallback((): void => {
+    const ed = textEditorRef.current;
+    if (!ed) return;
+    const text = ed.value.trim();
+    const { editingId } = ed;
+
     setTextEditor(null);
+    textEditorRef.current = null;
+
+    historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+    setHistoryLen(historyRef.current.length);
+
+    if (!text) {
+      // Remove the shape if no text was entered
+      shapesRef.current = shapesRef.current.filter((s) => s.id !== editingId);
+    } else {
+      // Just update the text — keep the drawn bounding box as-is
+      shapesRef.current = shapesRef.current.map((s) =>
+        s.id === editingId ? { ...s, text, fontSize: fontSizeRef.current, color: colorRef.current } : s
+      );
+    }
+
+    setShapeCount(shapesRef.current.length);
+    setSelectedId(null);
+    selectedIdRef.current = null;
     redraw();
   }, [shapesRef, redraw]);
 
@@ -615,19 +594,26 @@ function AnnotationModal({
           }
         }
       }
-      // Start a new shape (or open text editor)
+      // Start a new shape (or open text editor for existing text shapes)
       if (tool === "text") {
-        // Check if clicking on any existing text shape
+        // If textEditor is already open, commit it first (clicking elsewhere while editing)
+        if (textEditorRef.current) {
+          commitText();
+        }
+        // Check if clicking on any existing text shape → re-enter edit mode
         const hitTextShape = [...shapesRef.current].reverse().find((s) => s.type === "text" && hitShape(cpx.x, cpx.y, s, cw, ch));
         if (hitTextShape) {
-          // Re-enter edit mode for existing text
           setSelectedId(hitTextShape.id);
           selectedIdRef.current = hitTextShape.id;
-          setTextEditor({ normX: hitTextShape.x1, normY: hitTextShape.y1, value: hitTextShape.text || "" });
+          const ed = { editingId: hitTextShape.id, value: hitTextShape.text || "" };
+          setTextEditor(ed);
+          textEditorRef.current = ed;
           return;
         }
-        // Create new text at click position
-        setTextEditor({ normX: normPos.x, normY: normPos.y, value: "" });
+        // Otherwise, start drawing a new text box (like rect)
+        isDown.current = true;
+        drawStartNorm.current = normPos;
+        drawCurrentNorm.current = normPos;
         setSelectedId(null);
         selectedIdRef.current = null;
         return;
@@ -721,9 +707,38 @@ function AnnotationModal({
     const tool = activeToolRef.current;
 
     if (tool === "pointer" || dragShapeId.current !== null) {
-      // Move/resize committed; clean up (also handles move/resize initiated from draw tools)
+      // Move/resize committed; clean up
       dragShapeId.current = null;
       activeHandle.current = null;
+    } else if (tool === "text") {
+      // Finalize drawn text box
+      const endPos = drawCurrentNorm.current;
+      const dx = endPos.x - drawStartNorm.current.x;
+      const dy = endPos.y - drawStartNorm.current.y;
+      if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) {
+        historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+        const newShape: Shape = {
+          id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
+          type: "text",
+          x1: drawStartNorm.current.x,
+          y1: drawStartNorm.current.y,
+          x2: endPos.x,
+          y2: endPos.y,
+          color: colorRef.current,
+          thickness: thicknessRef.current,
+          censorStrength: 2,
+          text: "",
+          fontSize: fontSizeRef.current,
+        };
+        shapesRef.current = [...shapesRef.current, newShape];
+        setSelectedId(newShape.id);
+        selectedIdRef.current = newShape.id;
+        setShapeCount(shapesRef.current.length);
+        setHistoryLen(historyRef.current.length);
+        const ed = { editingId: newShape.id, value: "" };
+        setTextEditor(ed);
+        textEditorRef.current = ed;
+      }
     } else {
       // Commit new drawn shape — drawCurrentNorm already has shift-constraint applied from onMouseMove
       const endPos = drawCurrentNorm.current;
@@ -845,7 +860,7 @@ function AnnotationModal({
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full select-none"
-            style={{ cursor: activeTool === "text" ? "text" : activeTool !== "pointer" ? "crosshair" : "default" }}
+            style={{ cursor: activeTool !== "pointer" ? "crosshair" : "default" }}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
@@ -858,57 +873,153 @@ function AnnotationModal({
             }}
           />
 
-          {/* Inline text editor overlay */}
-          {textEditor !== null && (
-            <textarea
-              ref={textAreaRef}
-              autoFocus
-              rows={1}
-              value={textEditor.value}
-              onChange={(e) => {
-                const val = e.target.value;
-                setTextEditor((prev) => prev ? { ...prev, value: val } : null);
-                // Auto-grow height
-                e.target.style.height = "auto";
-                e.target.style.height = `${e.target.scrollHeight}px`;
-              }}
-              onBlur={() => {
-                const ed = textEditorRef.current;
-                if (ed) commitText(ed);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setTextEditor(null);
-                } else if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  const ed = textEditorRef.current;
-                  if (ed) commitText(ed);
-                }
-              }}
-              style={{
-                position: "absolute",
-                left: `${textEditor.normX * 100}%`,
-                top: `${textEditor.normY * 100}%`,
-                minWidth: "80px",
-                width: "auto",
-                background: "transparent",
-                border: "1px dashed rgba(75,139,245,0.75)",
-                borderRadius: "2px",
-                outline: "none",
-                color: color,
-                fontSize: `${fontSize * (canvasSize.h / 1080)}px`,
-                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                fontWeight: "bold",
-                lineHeight: "1.35",
-                resize: "none",
-                padding: "1px 3px",
-                overflow: "hidden",
-                zIndex: 10,
-                caretColor: color,
-              }}
-            />
-          )}
+          {/* Inline text editor overlay — shown while a text shape is being edited */}
+          {textEditor !== null && (() => {
+            const editShape = shapesRef.current.find((s) => s.id === textEditor.editingId);
+            if (!editShape) return null;
+            const n = normBounds(editShape);
+            const cw = canvasSize.w, ch = canvasSize.h;
+            const editHandles = getHandles(editShape, cw, ch).filter((h) => h.id !== "MOVE");
+
+            const startHandleDrag = (e: React.MouseEvent, handleId: HandleId): void => {
+              e.preventDefault();
+              suppressBlurRef.current = true;
+              const canvas = canvasRef.current;
+              if (!canvas) return;
+              historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
+              setHistoryLen(historyRef.current.length);
+              isDown.current = true;
+              activeHandle.current = handleId;
+              dragShapeId.current = textEditor.editingId;
+              const r = canvas.getBoundingClientRect();
+              dragLastNorm.current = {
+                x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+                y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+              };
+              const onDocMove = (me: MouseEvent): void => {
+                if (!canvas) return;
+                const rr = canvas.getBoundingClientRect();
+                const np = {
+                  x: Math.max(0, Math.min(1, (me.clientX - rr.left) / rr.width)),
+                  y: Math.max(0, Math.min(1, (me.clientY - rr.top) / rr.height)),
+                };
+                const dnx = np.x - dragLastNorm.current.x;
+                const dny = np.y - dragLastNorm.current.y;
+                dragLastNorm.current = np;
+                shapesRef.current = shapesRef.current.map((s) =>
+                  s.id === textEditor.editingId ? applyHandle(s, handleId, dnx, dny) : s
+                );
+                redraw();
+                // Trigger re-render so textarea repositions
+                setTextEditor((prev) => prev ? { ...prev } : null);
+              };
+              const onDocUp = (): void => {
+                isDown.current = false;
+                dragShapeId.current = null;
+                activeHandle.current = null;
+                document.removeEventListener("mousemove", onDocMove);
+                document.removeEventListener("mouseup", onDocUp);
+                // Re-focus textarea after handle drag
+                suppressBlurRef.current = false;
+                setTimeout(() => textAreaRef.current?.focus(), 0);
+              };
+              document.addEventListener("mousemove", onDocMove);
+              document.addEventListener("mouseup", onDocUp);
+            };
+
+            return (
+              <>
+                {/* Move bar at top edge of text box */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${n.x1 * 100}%`,
+                    top: `${n.y1 * 100}%`,
+                    width: `${(n.x2 - n.x1) * 100}%`,
+                    height: "5px",
+                    cursor: "move",
+                    background: "rgba(75,139,245,0.5)",
+                    zIndex: 15,
+                  }}
+                  onMouseDown={(e) => startHandleDrag(e, "MOVE")}
+                />
+                {/* Textarea for typing */}
+                <textarea
+                  ref={textAreaRef}
+                  autoFocus
+                  value={textEditor.value}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTextEditor((prev) => prev ? { ...prev, value: val } : null);
+                    if (textEditorRef.current) textEditorRef.current = { ...textEditorRef.current, value: val };
+                  }}
+                  onBlur={() => {
+                    if (!suppressBlurRef.current) commitText();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      // Cancel: remove the shape entirely
+                      const editingId = textEditorRef.current?.editingId;
+                      setTextEditor(null);
+                      textEditorRef.current = null;
+                      if (editingId) {
+                        shapesRef.current = shapesRef.current.filter((s) => s.id !== editingId);
+                        setShapeCount(shapesRef.current.length);
+                        setSelectedId(null);
+                        selectedIdRef.current = null;
+                        redraw();
+                      }
+                    }
+                    // Enter adds newline; no special commit on Enter
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: `${n.x1 * 100}%`,
+                    top: `${n.y1 * 100}%`,
+                    width: `${(n.x2 - n.x1) * 100}%`,
+                    height: `${(n.y2 - n.y1) * 100}%`,
+                    background: "transparent",
+                    border: "1px dashed rgba(75,139,245,0.75)",
+                    borderTop: "5px solid rgba(75,139,245,0.5)",
+                    borderRadius: "2px",
+                    outline: "none",
+                    color: color,
+                    fontSize: `${fontSize * (canvasSize.h / 1080)}px`,
+                    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                    fontWeight: "bold",
+                    lineHeight: "1.35",
+                    resize: "none",
+                    padding: "2px 4px",
+                    overflow: "hidden",
+                    zIndex: 12,
+                    caretColor: color,
+                    boxSizing: "border-box",
+                  }}
+                />
+                {/* Resize handles as div elements (above textarea) */}
+                {editHandles.map((h) => (
+                  <div
+                    key={h.id}
+                    style={{
+                      position: "absolute",
+                      left: `${(h.cx / cw) * 100}%`,
+                      top: `${(h.cy / ch) * 100}%`,
+                      width: `${HANDLE_R * 2}px`,
+                      height: `${HANDLE_R * 2}px`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: HANDLE_CURSORS[h.id],
+                      background: "#ffffff",
+                      border: "1.5px solid #4B8BF5",
+                      borderRadius: "50%",
+                      zIndex: 20,
+                    }}
+                    onMouseDown={(e) => startHandleDrag(e, h.id)}
+                  />
+                ))}
+              </>
+            );
+          })()}
         </div>
       </div>
 
