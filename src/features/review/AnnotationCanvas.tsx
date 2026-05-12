@@ -466,22 +466,47 @@ function AnnotationModal({
     }
     const totalHeightPx = lines.length * lineH;
     historyRef.current.push(shapesRef.current.map((s) => ({ ...s })));
-    const newShape: Shape = {
-      id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
-      type: "text",
-      x1: editor.normX,
-      y1: editor.normY,
-      x2: editor.normX + maxWidthPx / cw,
-      y2: editor.normY + totalHeightPx / ch,
-      color: colorRef.current,
-      thickness: thicknessRef.current,
-      censorStrength: 2,
-      text,
-      fontSize: fontSizeRef.current,
-    };
-    shapesRef.current = [...shapesRef.current, newShape];
-    setSelectedId(newShape.id);
-    selectedIdRef.current = newShape.id;
+    
+    const selId = selectedIdRef.current;
+    const existingShape = selId ? shapesRef.current.find((s) => s.id === selId && s.type === "text") : null;
+    
+    if (existingShape) {
+      // Update existing text shape
+      shapesRef.current = shapesRef.current.map((s) => 
+        s.id === selId 
+          ? {
+              ...s,
+              x1: editor.normX,
+              y1: editor.normY,
+              x2: editor.normX + maxWidthPx / cw,
+              y2: editor.normY + totalHeightPx / ch,
+              text,
+              fontSize: fontSizeRef.current,
+              color: colorRef.current,
+              thickness: thicknessRef.current,
+            }
+          : s
+      );
+    } else {
+      // Create new text shape
+      const newShape: Shape = {
+        id: `s${Date.now()}${Math.random().toString(36).slice(2)}`,
+        type: "text",
+        x1: editor.normX,
+        y1: editor.normY,
+        x2: editor.normX + maxWidthPx / cw,
+        y2: editor.normY + totalHeightPx / ch,
+        color: colorRef.current,
+        thickness: thicknessRef.current,
+        censorStrength: 2,
+        text,
+        fontSize: fontSizeRef.current,
+      };
+      shapesRef.current = [...shapesRef.current, newShape];
+      setSelectedId(newShape.id);
+      selectedIdRef.current = newShape.id;
+    }
+    
     setShapeCount(shapesRef.current.length);
     setHistoryLen(historyRef.current.length);
     setTextEditor(null);
@@ -592,6 +617,16 @@ function AnnotationModal({
       }
       // Start a new shape (or open text editor)
       if (tool === "text") {
+        // Check if clicking on any existing text shape
+        const hitTextShape = [...shapesRef.current].reverse().find((s) => s.type === "text" && hitShape(cpx.x, cpx.y, s, cw, ch));
+        if (hitTextShape) {
+          // Re-enter edit mode for existing text
+          setSelectedId(hitTextShape.id);
+          selectedIdRef.current = hitTextShape.id;
+          setTextEditor({ normX: hitTextShape.x1, normY: hitTextShape.y1, value: hitTextShape.text || "" });
+          return;
+        }
+        // Create new text at click position
         setTextEditor({ normX: normPos.x, normY: normPos.y, value: "" });
         setSelectedId(null);
         selectedIdRef.current = null;
@@ -631,8 +666,9 @@ function AnnotationModal({
           }
         }
       }
-      if ((isPointerTool ? cur === "default" : cur === "crosshair") && shapesRef.current.some((s) => hitShape(cpx.x, cpx.y, s, cw, ch))) {
-        cur = isPointerTool ? "pointer" : "move";
+      // For pointer tool: show pointer on any shape. For draw tools: only show move on SELECTED shape
+      if (isPointerTool && cur === "default" && shapesRef.current.some((s) => hitShape(cpx.x, cpx.y, s, cw, ch))) {
+        cur = "pointer";
       }
       canvas.style.cursor = cur;
     }
